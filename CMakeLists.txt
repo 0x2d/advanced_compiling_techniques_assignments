@@ -8,6 +8,9 @@ link_directories(${LLVM_LIBRARY_DIRS})
 
 file(GLOB SOURCE "./*.cpp")
 
+#缺少这个编译选项会导致链接失败，且该命令必须置于add_executable之前
+add_compile_options(-fno-rtti)
+
 add_executable(ast-interpreter ${SOURCE})
 
 set( LLVM_LINK_COMPONENTS
