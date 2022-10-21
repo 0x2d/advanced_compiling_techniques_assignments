@@ -89,19 +89,26 @@ public:
    }
 
    /// !TODO Support comparison operation
-   void binop(BinaryOperator *bop) {
-	   Expr * left = bop->getLHS();
-	   Expr * right = bop->getRHS();
+	void binop(BinaryOperator *bop, const ASTContext& context) {
+		//Expr is subclass of Stmt
+		Expr * left = bop->getLHS();
+		Expr * right = bop->getRHS();
 
-	   if (bop->isAssignmentOp()) {
-		   int val = mStack.back().getStmtVal(right);
-		   mStack.back().bindStmt(left, val);
-		   if (DeclRefExpr * declexpr = dyn_cast<DeclRefExpr>(left)) {
-			   Decl * decl = declexpr->getFoundDecl();
-			   mStack.back().bindDecl(decl, val);
-		   }
-	   }
-   }
+		if (bop->isAssignmentOp()) {
+			int val;
+			llvm::APSInt intResult = llvm::APSInt();
+			if (right->isIntegerConstantExpr(intResult, context)){
+				val = intResult.getExtValue();
+			} else{
+				val = mStack.back().getStmtVal(right);
+			}
+			mStack.back().bindStmt(left, val);
+			if (DeclRefExpr * declexpr = dyn_cast<DeclRefExpr>(left)) {
+				Decl * decl = declexpr->getFoundDecl();
+				mStack.back().bindDecl(decl, val);
+			}
+		}
+	}
 
    void decl(DeclStmt * declstmt) {
 	   for (DeclStmt::decl_iterator it = declstmt->decl_begin(), ie = declstmt->decl_end();
@@ -137,14 +144,14 @@ public:
 	   int val = 0;
 	   FunctionDecl * callee = callexpr->getDirectCallee();
 	   if (callee == mInput) {
-		  llvm::errs() << "Please Input an Integer Value : ";
+		  llvm::outs() << "Please Input an Integer Value : ";
 		  scanf("%d", &val);
 
 		  mStack.back().bindStmt(callexpr, val);
 	   } else if (callee == mOutput) {
 		   Expr * decl = callexpr->getArg(0);
 		   val = mStack.back().getStmtVal(decl);
-		   llvm::errs() << val;
+		   llvm::outs() << val;
 	   } else {
 		   /// You could add your code here for Function call Return
 	   }

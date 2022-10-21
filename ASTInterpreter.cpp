@@ -15,12 +15,12 @@ class InterpreterVisitor :
    public EvaluatedExprVisitor<InterpreterVisitor> {
 public:
    explicit InterpreterVisitor(const ASTContext &context, Environment * env)
-   : EvaluatedExprVisitor(context), mEnv(env) {}
+   : EvaluatedExprVisitor(context), mContext(context), mEnv(env) {}
    virtual ~InterpreterVisitor() {}
 
    virtual void VisitBinaryOperator (BinaryOperator * bop) {
 	   VisitStmt(bop);
-	   mEnv->binop(bop);
+	   mEnv->binop(bop, mContext);
    }
    virtual void VisitDeclRefExpr(DeclRefExpr * expr) {
 	   VisitStmt(expr);
@@ -38,6 +38,7 @@ public:
 	   mEnv->decl(declstmt);
    }
 private:
+   const ASTContext& mContext;
    Environment * mEnv;
 };
 
