@@ -20,3 +20,30 @@ then
 else
     echo "Test01 failed!"
 fi
+
+output=$(./build/ast-interpreter "`cat ./test/test02.c`")
+
+if [ $output -eq 20 ]
+then
+    echo "Test02 passed!"
+else
+    echo "Test02 failed!"
+fi
+
+output=$(./build/ast-interpreter "`cat ./test/test03.c`")
+
+if [ $output -eq 200 ]
+then
+    echo "Test03 passed!"
+else
+    echo "Test03 failed!"
+fi
+
+output=$(./build/ast-interpreter "`cat ./test/test04.c`")
+
+if [ $output -eq -100 ]
+then
+    echo "Test04 passed!"
+else
+    echo "Test04 failed!"
+fi

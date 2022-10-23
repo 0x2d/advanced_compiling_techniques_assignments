@@ -23,3 +23,6 @@ make -j6
 
 ### 20221022
 1. 为解决Environment类和InterpreterVisitor类交叉引用，重构代码；初步支持Heap、全局变量、IntegerLiteral。
+
+### 20221023
+1. Environment类和InterpreterVisitor类解耦合；增加调试代码；初步支持函数调用、if语句、更多二元运算符；通过test01、02、03。

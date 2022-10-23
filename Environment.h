@@ -12,6 +12,9 @@
 #include "clang/Frontend/FrontendAction.h"
 #include "clang/Tooling/Tooling.h"
 
+//dump已处理的AST子树的调试开关
+// #define _DEBUG
+
 class InterpreterVisitor;
 
 class StackFrame {
@@ -110,66 +113,43 @@ class Environment {
 	clang::FunctionDecl * mInput;
 	clang::FunctionDecl * mOutput;
 	clang::FunctionDecl * mEntry;
-	std::vector<clang::FunctionDecl*> mFuncs;
 
 public:
 	/// Get the declartions to the built-in functions
-	Environment() : mStack(), mHeap(), mFree(NULL), mMalloc(NULL), mInput(NULL), mOutput(NULL), mEntry(NULL), mFuncs() {}
+	Environment() : mStack(), mHeap(), mFree(NULL), mMalloc(NULL), mInput(NULL), mOutput(NULL), mEntry(NULL) {}
 
 	/// Initialize the Environment
 	void init(clang::TranslationUnitDecl * unit, const clang::ASTContext& context);
 
 	clang::FunctionDecl * getEntry() { return mEntry; }
 
+	int getStmtVal(clang::Stmt * stmt) {
+		int val;
+		if (mStack.back().findStmtVal(stmt)) {
+			val = mStack.back().getStmtVal(stmt);
+		} else {
+			val = mHeap.getStmtVal(stmt);
+		}
+		return val;
+	}
+
+	int getDeclVal(clang::Decl * decl) {
+		int val;
+		if (mStack.back().findDeclVal(decl)) {
+			val = mStack.back().getDeclVal(decl);
+		} else {
+			val = mHeap.getDeclVal(decl);
+		}
+		return val;
+	}
+
 	void binop(clang::BinaryOperator * bop, const clang::ASTContext& context);
 	void literal(clang::IntegerLiteral * literal, const clang::ASTContext& context);
-	void decl(clang::DeclStmt * declstmt);
+	void decl(clang::DeclStmt * declstmt, const clang::ASTContext& context);
 	void declref(clang::DeclRefExpr * declref);
 	void cast(clang::CastExpr * castexpr);
-	void call(clang::CallExpr * callexpr, InterpreterVisitor * mVisitor);
-	void ifstmt(clang::IfStmt * ifstmt);
-};
-
-class InterpreterVisitor : public clang::EvaluatedExprVisitor<InterpreterVisitor> {
-public:
-	explicit InterpreterVisitor(const clang::ASTContext &context, Environment * env) 
-		: EvaluatedExprVisitor(context), mContext(context), mEnv(env) {}
-	virtual ~InterpreterVisitor() {};
-
-	virtual void VisitBinaryOperator (clang::BinaryOperator * bop) {
-		VisitStmt(bop);
-		mEnv->binop(bop, mContext);
-	}
-
-	virtual void VisitDeclRefExpr(clang::DeclRefExpr * expr) {
-		VisitStmt(expr);
-		mEnv->declref(expr);
-	}
-
-	virtual void VisitCastExpr(clang::CastExpr * expr) {
-		VisitStmt(expr);
-		mEnv->cast(expr);
-	}
-
-	virtual void VisitCallExpr(clang::CallExpr * call) {
-		VisitStmt(call);
-		mEnv->call(call, this);
-	}
-
-	virtual void VisitDeclStmt(clang::DeclStmt * declstmt) {
-		mEnv->decl(declstmt);
-	}
-
-	virtual void VisitIntegerLiteral(clang::IntegerLiteral * literal) {
-		mEnv->literal(literal, mContext);
-	}
-
-	virtual void VisitIfStmt(clang::IfStmt * ifstmt) {
-		VisitStmt(ifstmt);
-		mEnv->ifstmt(ifstmt);
-	}
-
-private:
-	const clang::ASTContext& mContext;
-	Environment * mEnv;
+	bool beforeCall(clang::CallExpr * callexpr);
+	void afterCall(clang::CallExpr * callexpr);
+	bool cond(clang::Expr * cond);
+	void returnStmt(clang::ReturnStmt * restmt);
 };

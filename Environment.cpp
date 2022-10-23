@@ -8,9 +8,6 @@ void Environment::init(clang::TranslationUnitDecl * unit, const clang::ASTContex
 			else if (fdecl->getName().equals("GET")) mInput = fdecl;
 			else if (fdecl->getName().equals("PRINT")) mOutput = fdecl;
 			else if (fdecl->getName().equals("main")) mEntry = fdecl;
-			else {
-				mFuncs.push_back(fdecl);
-			}
 		} else if (clang::VarDecl * vdecl = clang::dyn_cast<clang::VarDecl>(*i)) {
 			clang::Expr * init = vdecl->getInit();
 			llvm::APSInt intResult = llvm::APSInt();
@@ -24,7 +21,7 @@ void Environment::init(clang::TranslationUnitDecl * unit, const clang::ASTContex
 	mStack.push_back(StackFrame());
 }
 
-void Environment::call(clang::CallExpr * callexpr, InterpreterVisitor * mVisitor) {
+bool Environment::beforeCall(clang::CallExpr * callexpr) {
 	mStack.back().setPC(callexpr);
 	int val = 0;
 	clang::FunctionDecl * callee = callexpr->getDirectCallee();
@@ -32,49 +29,95 @@ void Environment::call(clang::CallExpr * callexpr, InterpreterVisitor * mVisitor
 		llvm::outs() << "Please Input an Integer Value : ";
 		scanf("%d", &val);
 		mStack.back().bindStmt(callexpr, val);
+		return false;
 	} else if (callee == mOutput) {
 		clang::Expr * decl = callexpr->getArg(0);
-		val = mStack.back().getStmtVal(decl);
+		val = getStmtVal(decl);
 		llvm::outs() << val;
+		return false;
 	} else {
-		clang::Expr * decl = callexpr->getArg(0);
-		val = mStack.back().getStmtVal(decl);
-		clang::ParmVarDecl * param = callee->getParamDecl(0);
+		int numArgs = callexpr->getNumArgs();
+		int vals[numArgs];
+		clang::Expr * decls[numArgs];
+		clang::ParmVarDecl * params[numArgs];
+		for (int i = 0; i < numArgs; i++) {
+			decls[i] = callexpr->getArg(i);
+			vals[i] = getStmtVal(decls[i]);
+			params[i] = callee->getParamDecl(i);
+		}
 		mStack.push_back(StackFrame());
-		mStack.back().bindDecl(param, val);
-		mVisitor->VisitStmt(callee->getBody());
-		(*(mStack.end()-2)).bindStmt(callexpr, mStack.back().getReturn());
-		mStack.pop_back();
+		for (int i = 0; i < numArgs; i++) {
+			mStack.back().bindDecl(params[i], vals[i]);
+		}
+		return true;
 	}
 }
 
-void Environment::ifstmt(clang::IfStmt * ifstmt) {
-	//todo
+void Environment::afterCall(clang::CallExpr * callexpr) {
+	clang::FunctionDecl * callee = callexpr->getDirectCallee();
+	(*(mStack.end()-2)).bindStmt(callexpr, mStack.back().getReturn());
+	mStack.pop_back();
 }
 
+bool Environment::cond(clang::Expr * cond) {
+	return mStack.back().getStmtVal(cond);
+}
+
+void Environment::returnStmt(clang::ReturnStmt * restmt) {
+	mStack.back().setReturn(getStmtVal(restmt->getRetValue()));
+}
+
+///home/ouyang/llvm-project/clang/include/clang/AST/OperationKinds.def
 void Environment::binop(clang::BinaryOperator * bop, const clang::ASTContext& context) {
 	clang::Expr * left = bop->getLHS();
 	clang::Expr * right = bop->getRHS();
+	clang::BinaryOperator::Opcode opc = bop->getOpcode();
 	if (bop->isAssignmentOp()) {
-		int val;
-		if (mStack.back().findStmtVal(right)) {
-			val = mStack.back().getStmtVal(right);
-		} else {
-			val = mHeap.getStmtVal(right);
-		}
+		int val = getStmtVal(right);
 		mStack.back().bindStmt(left, val);
 		if (clang::DeclRefExpr * declexpr = clang::dyn_cast<clang::DeclRefExpr>(left)) {
 			clang::Decl * decl = declexpr->getFoundDecl();
 			mStack.back().bindDecl(decl, val);
 		}
+	} else {
+		int leftVal = getStmtVal(left);
+		int rightVal = getStmtVal(right);
+		switch (opc) {
+			case clang::BO_GT :
+				mStack.back().bindStmt(bop, leftVal > rightVal);
+				break;
+			case clang::BO_LT :
+				mStack.back().bindStmt(bop, leftVal < rightVal);
+				break;
+			case clang::BO_EQ :
+				mStack.back().bindStmt(bop, leftVal == rightVal);
+				break;
+			case clang::BO_Sub :
+				mStack.back().bindStmt(bop, leftVal - rightVal);
+				break;
+			case clang::BO_Add :
+				mStack.back().bindStmt(bop, leftVal + rightVal);
+				break;
+			case clang::BO_Mul :
+				mStack.back().bindStmt(bop, leftVal * rightVal);
+				break;
+		}
 	}
 }
 
-void Environment::decl(clang::DeclStmt * declstmt) {
+void Environment::decl(clang::DeclStmt * declstmt, const clang::ASTContext& context) {
 	for (clang::DeclStmt::decl_iterator it = declstmt->decl_begin(), ie = declstmt->decl_end(); it != ie; ++ it) {
 		clang::Decl * decl = *it;
 		if (clang::VarDecl * vardecl = clang::dyn_cast<clang::VarDecl>(decl)) {
-			mStack.back().bindDecl(vardecl, 0);
+			int val = 0;
+			if (vardecl->hasInit()) {
+				clang::Expr * init = vardecl->getInit();
+				llvm::APSInt intResult = llvm::APSInt();
+				if (init->isIntegerConstantExpr(intResult, context)){
+					val = intResult.getExtValue();
+				}
+			}
+			mStack.back().bindDecl(vardecl, val);
 		}
 	}
 }
@@ -82,13 +125,8 @@ void Environment::decl(clang::DeclStmt * declstmt) {
 void Environment::declref(clang::DeclRefExpr * declref) {
 	mStack.back().setPC(declref);
 	if (declref->getType()->isIntegerType()) {
-		clang::Decl* decl = declref->getFoundDecl();
-		int val;
-		if (mStack.back().findDeclVal(decl)) {
-			val = mStack.back().getDeclVal(decl);
-		} else {
-			val = mHeap.getDeclVal(decl);
-		}
+		clang::Decl * decl = declref->getFoundDecl();
+		int val = getDeclVal(decl);
 		mStack.back().bindStmt(declref, val);
 	}
 }
@@ -97,7 +135,7 @@ void Environment::cast(clang::CastExpr * castexpr) {
 	mStack.back().setPC(castexpr);
 	if (castexpr->getType()->isIntegerType()) {
 		clang::Expr * expr = castexpr->getSubExpr();
-		int val = mStack.back().getStmtVal(expr);
+		int val = getStmtVal(expr);
 		mStack.back().bindStmt(castexpr, val );
 	}
 }
