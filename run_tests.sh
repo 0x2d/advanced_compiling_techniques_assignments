@@ -3,47 +3,23 @@
 
 cd /home/ouyang/ast-interpreter
 
-output=$(./build/ast-interpreter "`cat ./test/test00.c`")
+answer=(100 10 20 200 10 10 20)
+i=0
 
-if [ $output -eq 100 ]
-then
-    echo "Test00 passed!"
-else
-    echo "Test00 failed!"
-fi
+for file in `ls /home/ouyang/ast-interpreter/test`
+do
+    output=$(./build/ast-interpreter "`cat ./test/$file`")
 
-output=$(./build/ast-interpreter "`cat ./test/test01.c`")
+    if [ $output -eq ${answer[i]} ]
+    then
+        echo "$file passed!"
+    else
+        echo "$file failed!"
+    fi
 
-if [ $output -eq 10 ]
-then
-    echo "Test01 passed!"
-else
-    echo "Test01 failed!"
-fi
-
-output=$(./build/ast-interpreter "`cat ./test/test02.c`")
-
-if [ $output -eq 20 ]
-then
-    echo "Test02 passed!"
-else
-    echo "Test02 failed!"
-fi
-
-output=$(./build/ast-interpreter "`cat ./test/test03.c`")
-
-if [ $output -eq 200 ]
-then
-    echo "Test03 passed!"
-else
-    echo "Test03 failed!"
-fi
-
-output=$(./build/ast-interpreter "`cat ./test/test04.c`")
-
-if [ $output -eq -100 ]
-then
-    echo "Test04 passed!"
-else
-    echo "Test04 failed!"
-fi
+    let i++
+    if [ $i -eq 7 ]
+    then
+        break
+    fi
+done

@@ -13,7 +13,15 @@ public:
 		#ifdef _DEBUG
 			std::cout << "Processing BinaryOperator " << bop << std::endl;
 		#endif
-		mEnv->binop(bop, mContext);
+		mEnv->binop(bop);
+	}
+
+	virtual void VisitUnaryOperator (clang::UnaryOperator * uop) {
+		VisitStmt(uop);
+		#ifdef _DEBUG
+			std::cout << "Processing UnaryOperator " << uop << std::endl;
+		#endif
+		mEnv->unop(uop);
 	}
 
 	virtual void VisitDeclRefExpr(clang::DeclRefExpr * expr) {
@@ -64,11 +72,24 @@ public:
 			std::cout << "Processing IfStmt " << ifstmt << std::endl;
 		#endif
 		//VisitStmt方法只访问所有子stmt，而Visit方法同时访问stmt本身
-		Visit(ifstmt->getCond());
+		Visit(cond);
 		if (mEnv->cond(cond)) {
 			Visit(ifstmt->getThen());
 		} else if (ifstmt->hasElseStorage()) {
 			Visit(ifstmt->getElse());
+		}
+	}
+
+	virtual void VisitWhileStmt(clang::WhileStmt * whilestmt) {
+		clang::Expr * cond = whilestmt->getCond();
+		#ifdef _DEBUG
+			std::cout << "Processing WhileStmt " << whilestmt << std::endl;
+		#endif
+		while (true) {
+			Visit(cond);
+			if (!mEnv->cond(cond)) break;
+			//getbody()返回类型为CompundStmt
+			VisitStmt(whilestmt->getBody());
 		}
 	}
 

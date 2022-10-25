@@ -143,7 +143,8 @@ public:
 		return val;
 	}
 
-	void binop(clang::BinaryOperator * bop, const clang::ASTContext& context);
+	void binop(clang::BinaryOperator * bop);
+	void unop(clang::UnaryOperator * uop);
 	void literal(clang::IntegerLiteral * literal, const clang::ASTContext& context);
 	void decl(clang::DeclStmt * declstmt, const clang::ASTContext& context);
 	void declref(clang::DeclRefExpr * declref);

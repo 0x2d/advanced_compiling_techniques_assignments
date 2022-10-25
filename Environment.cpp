@@ -68,7 +68,7 @@ void Environment::returnStmt(clang::ReturnStmt * restmt) {
 }
 
 ///home/ouyang/llvm-project/clang/include/clang/AST/OperationKinds.def
-void Environment::binop(clang::BinaryOperator * bop, const clang::ASTContext& context) {
+void Environment::binop(clang::BinaryOperator * bop) {
 	clang::Expr * left = bop->getLHS();
 	clang::Expr * right = bop->getRHS();
 	clang::BinaryOperator::Opcode opc = bop->getOpcode();
@@ -102,6 +102,17 @@ void Environment::binop(clang::BinaryOperator * bop, const clang::ASTContext& co
 				mStack.back().bindStmt(bop, leftVal * rightVal);
 				break;
 		}
+	}
+}
+
+void Environment::unop(clang::UnaryOperator * uop) {
+	clang::Expr * sub = uop->getSubExpr();
+	clang::UnaryOperator::Opcode opc = uop->getOpcode();
+	int subVal = getStmtVal(sub);
+	switch (opc) {
+		case clang::UO_Minus :
+			mStack.back().bindStmt(uop, -subVal);
+			break;
 	}
 }
 
