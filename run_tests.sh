@@ -3,7 +3,7 @@
 
 cd /home/ouyang/ast-interpreter
 
-answer=(100 10 20 200 10 10 20)
+answer=(100 10 20 200 10 10 20 10 20 20 5 100)
 i=0
 
 for file in `ls /home/ouyang/ast-interpreter/test`
@@ -18,7 +18,7 @@ do
     fi
 
     let i++
-    if [ $i -eq 7 ]
+    if [ $i -eq 12 ]
     then
         break
     fi

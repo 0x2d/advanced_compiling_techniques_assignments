@@ -67,29 +67,49 @@ public:
 	}
 
 	virtual void VisitIfStmt(clang::IfStmt * ifstmt) {
-		clang::Expr * cond = ifstmt->getCond();
 		#ifdef _DEBUG
 			std::cout << "Processing IfStmt " << ifstmt << std::endl;
 		#endif
+		clang::Expr * cond = ifstmt->getCond();
+		clang::Stmt * then = ifstmt->getThen();
+		clang::Stmt * els = ifstmt->getElse();
 		//VisitStmt方法只访问所有子stmt，而Visit方法同时访问stmt本身
 		Visit(cond);
 		if (mEnv->cond(cond)) {
-			Visit(ifstmt->getThen());
-		} else if (ifstmt->hasElseStorage()) {
-			Visit(ifstmt->getElse());
+			Visit(then);
+		} else {
+			Visit(els);
 		}
 	}
 
 	virtual void VisitWhileStmt(clang::WhileStmt * whilestmt) {
-		clang::Expr * cond = whilestmt->getCond();
 		#ifdef _DEBUG
 			std::cout << "Processing WhileStmt " << whilestmt << std::endl;
 		#endif
+		clang::Expr * cond = whilestmt->getCond();
+		clang::Stmt * body = whilestmt->getBody();
 		while (true) {
 			Visit(cond);
 			if (!mEnv->cond(cond)) break;
 			//getbody()返回类型为CompundStmt
-			VisitStmt(whilestmt->getBody());
+			VisitStmt(body);
+		}
+	}
+
+	virtual void VisitForStmt(clang::ForStmt * forstmt) {
+		#ifdef _DEBUG
+			std::cout << "Processing ForStmt " << forstmt << std::endl;
+		#endif
+		clang::Stmt * init = forstmt->getInit();
+		clang::Expr * cond = forstmt->getCond();
+		clang::Expr * inc = forstmt->getInc();
+		clang::Stmt * body = forstmt->getBody();
+		Visit(init);
+		while (true) {
+			Visit(cond);
+			if (!mEnv->cond(cond)) break;
+			VisitStmt(body);
+			Visit(inc);
 		}
 	}
 
