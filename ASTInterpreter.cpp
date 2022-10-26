@@ -54,7 +54,12 @@ public:
 			std::cout << "Processing CallExpr" << std::endl;
 		#endif
 		if (mEnv->beforeCall(call)) {
-			VisitStmt(call->getDirectCallee()->getBody());
+			try {
+				VisitStmt(call->getDirectCallee()->getBody());
+			} catch (const std::exception & e) {}
+			#ifdef _DEBUG
+				std::cout << "Function returned" << std::endl;
+			#endif
 			mEnv->afterCall(call);
 		}
 	}
@@ -123,8 +128,7 @@ public:
 			#ifdef _DEBUG
 				std::cout << "Processing WhileStmt " << _i++ << std::endl;
 			#endif
-			//getbody()返回类型为CompundStmt
-			VisitStmt(body);
+			Visit(body);
 		}
 	}
 
@@ -143,7 +147,7 @@ public:
 			#ifdef _DEBUG
 				std::cout << "Processing ForStmt " << _i++ << std::endl;
 			#endif
-			VisitStmt(body);
+			Visit(body);
 			if (inc) Visit(inc);
 		}
 	}
@@ -154,6 +158,7 @@ public:
 			std::cout << "Processing ReturnStmt" << std::endl;
 		#endif
 		mEnv->returnStmt(restmt);
+		throw std::exception();
 	}
 
 private:
@@ -170,7 +175,13 @@ public:
 		clang::TranslationUnitDecl * decl = Context.getTranslationUnitDecl();
 		mEnv.init(decl, Context);
 		clang::FunctionDecl * entry = mEnv.getEntry();
-		mVisitor.VisitStmt(entry->getBody());
+		try {
+			mVisitor.VisitStmt(entry->getBody());
+		} catch (const std::exception & e) {
+			#ifdef _DEBUG
+				std::cout << "Program terminated" << std::endl;
+			#endif
+		}
 	}
 
 private:

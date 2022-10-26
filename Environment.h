@@ -4,6 +4,7 @@
 #include <string.h>
 #include <string>
 #include <iostream>
+#include <stdexcept>
 
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/Decl.h"
@@ -13,7 +14,7 @@
 #include "clang/Frontend/FrontendAction.h"
 #include "clang/Tooling/Tooling.h"
 
-//dump已处理的AST子树的调试开关
+//调试开关
 // #define _DEBUG
 
 class InterpreterVisitor;

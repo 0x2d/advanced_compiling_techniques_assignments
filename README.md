@@ -22,6 +22,7 @@ make -j6
 1. 初步支持for语句；通过test07至11。
 2. 初步支持数组变量，对于ArraySubscriptExpr同时提供值和地址，默认使用值，根据需要使用地址；修改了一些由于指针为空导致的bug；细化了调试信息，增强了可视性；通过test12至16。
 3. 初步支持malloc和指针变量，支持4字节和8字节变量；新增支持ParenExpr、UnaryExprOrTypeTraitExpr、指针运算；新增测试用例；通过test17-19。
+4. 修复了一些BUG；使用try catch语句支持函数的返回；通过test20。
 
 ### 20221025
 1. 优化自动评测脚本；初步支持一元运算符、while语句；通过test04、05、06。

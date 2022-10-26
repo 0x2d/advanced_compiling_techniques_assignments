@@ -62,6 +62,9 @@ bool Environment::beforeCall(clang::CallExpr * callexpr) {
 		mStack.push_back(StackFrame());
 		for (int i = 0; i < numArgs; i++) {
 			mStack.back().bindDecl(params[i], vals[i]);
+			#ifdef _DEBUG
+				std::cout << ' ' << params[i] << " : " << vals[i] << std::endl;
+			#endif
 		}
 		return true;
 	}
@@ -266,6 +269,9 @@ void Environment::declref(clang::DeclRefExpr * declref) {
 	clang::QualType type = declref->getType();
 	if (type->isIntegerType() || type->isArrayType() || (type->isPointerType() && !type->isFunctionPointerType())) {
 		decl = declref->getFoundDecl();
+		#ifdef _DEBUG
+			std::cout << " Refering " << decl << std::endl;
+		#endif
 		val = getDeclVal(decl);
 		mStack.back().bindStmt(declref, val);
 	}
@@ -285,17 +291,18 @@ void Environment::cast(clang::CastExpr * castexpr) {
 void Environment::array(clang::ArraySubscriptExpr * array) {
 	clang::Expr * base = array->getBase();
 	clang::Expr * idx = array->getIdx();
-	int stride;
+	int64_t val, address;
 	clang::QualType type = base->getType();
 	const clang::PointerType * pType= clang::dyn_cast<clang::PointerType>(type.getTypePtr());
 	clang::QualType peType = pType->getPointeeType();
 	if (peType->isIntegerType()) {
-		stride = sizeof(int);
+		address = getStmtVal(base) + getStmtVal(idx) * sizeof(int);
+		val = *((int *)address);
 	} else if (peType->isPointerType()) {
-		stride = sizeof(int64_t);
+		address = getStmtVal(base) + getStmtVal(idx) * sizeof(int64_t);
+		val = *((int64_t *)address);
 	}
-	int64_t address = getStmtVal(base) + getStmtVal(idx) * stride;
-	mStack.back().bindStmt(array, *((int64_t *)address));
+	mStack.back().bindStmt(array, val);
 	mStack.back().bindPointer(array, address);
 }
 
