@@ -8,7 +8,7 @@ public:
 		: EvaluatedExprVisitor(context), mContext(context), mEnv(env) {}
 	virtual ~InterpreterVisitor() {};
 
-	virtual void VisitBinaryOperator (clang::BinaryOperator * bop) {
+	virtual void VisitBinaryOperator(clang::BinaryOperator * bop) {
 		VisitStmt(bop);
 		#ifdef _DEBUG
 			std::cout << "Processing BinaryOperator" << std::endl;
@@ -16,12 +16,20 @@ public:
 		mEnv->binop(bop);
 	}
 
-	virtual void VisitUnaryOperator (clang::UnaryOperator * uop) {
+	virtual void VisitUnaryOperator(clang::UnaryOperator * uop) {
 		VisitStmt(uop);
 		#ifdef _DEBUG
 			std::cout << "Processing UnaryOperator" << std::endl;
 		#endif
 		mEnv->unop(uop);
+	}
+
+	virtual void VisitParenExpr(clang::ParenExpr * paren) {
+		VisitStmt(paren);
+		#ifdef _DEBUG
+			std::cout << "Processing ParenExpr" << std::endl;
+		#endif
+		mEnv->paren(paren);
 	}
 
 	virtual void VisitDeclRefExpr(clang::DeclRefExpr * expr) {
@@ -57,6 +65,13 @@ public:
 			std::cout << "Processing ArraySubscriptExpr" << std::endl;
 		#endif
 		mEnv->array(array);
+	}
+
+	virtual void VisitUnaryExprOrTypeTraitExpr(clang::UnaryExprOrTypeTraitExpr * ueotte) {
+		#ifdef _DEBUG
+			std::cout << "Processing UnaryExprOrTypeTraitExpr" << std::endl;
+		#endif
+		mEnv->ueotte(ueotte);
 	}
 
 	virtual void VisitDeclStmt(clang::DeclStmt * declstmt) {

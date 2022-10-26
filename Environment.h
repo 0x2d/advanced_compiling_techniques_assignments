@@ -1,6 +1,7 @@
 //==--- tools/clang-check/ClangInterpreter.cpp - Clang Interpreter tool --------------===//
 //===----------------------------------------------------------------------===//
-#include <cstdio>
+#include <stdio.h>
+#include <string.h>
 #include <string>
 #include <iostream>
 
@@ -161,11 +162,13 @@ public:
 
 	void binop(clang::BinaryOperator * bop);
 	void unop(clang::UnaryOperator * uop);
+	void paren(clang::ParenExpr * paren);
 	void literal(clang::IntegerLiteral * literal, const clang::ASTContext& context);
 	void decl(clang::DeclStmt * declstmt, const clang::ASTContext& context);
 	void declref(clang::DeclRefExpr * declref);
 	void cast(clang::CastExpr * castexpr);
 	void array(clang::ArraySubscriptExpr * array);
+	void ueotte(clang::UnaryExprOrTypeTraitExpr * ueotte);
 	bool beforeCall(clang::CallExpr * callexpr);
 	void afterCall(clang::CallExpr * callexpr);
 	bool cond(clang::Expr * cond);

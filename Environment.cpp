@@ -9,7 +9,7 @@ void Environment::init(clang::TranslationUnitDecl * unit, const clang::ASTContex
 			else if (fdecl->getName().equals("PRINT")) mOutput = fdecl;
 			else if (fdecl->getName().equals("main")) mEntry = fdecl;
 		} else if (clang::VarDecl * vdecl = clang::dyn_cast<clang::VarDecl>(*i)) {
-			int64_t val = 0;
+			int val = 0;
 			if (vdecl->hasInit()) {
 				clang::Expr * init = vdecl->getInit();
 				llvm::APSInt intResult = llvm::APSInt();
@@ -36,6 +36,18 @@ bool Environment::beforeCall(clang::CallExpr * callexpr) {
 		clang::Expr * decl = callexpr->getArg(0);
 		val = getStmtVal(decl);
 		llvm::outs() << val;
+		return false;
+	} else if (callee == mMalloc) {
+		clang::Expr * decl = callexpr->getArg(0);
+		val = getStmtVal(decl);
+		void * p = malloc(val);
+		memset(p, 0, val);
+		mStack.back().bindStmt(callexpr, (int64_t)p);
+		return false;
+	} else if (callee == mFree) {
+		clang::Expr * decl = callexpr->getArg(0);
+		val = getStmtVal(decl);
+		free((void *)val);
 		return false;
 	} else {
 		int numArgs = callexpr->getNumArgs();
@@ -84,12 +96,46 @@ void Environment::binop(clang::BinaryOperator * bop) {
 			clang::Decl * decl = declexpr->getFoundDecl();
 			mStack.back().bindDecl(decl, val);
 		} else if (clang::ArraySubscriptExpr * array = clang::dyn_cast<clang::ArraySubscriptExpr>(left)) {
+			//若左值为数组，左节点必然为ArraySubscriptExpr
 			int64_t address = mStack.back().getPointerVal(array);
-			*((int64_t *)address) = val;
+			clang::QualType type = array->getType();
+			if (type->isIntegerType()) {
+				*((int *)address) = (int)val;
+			} else if (type->isPointerType()) {
+				*((int64_t *)address) = val;
+			}
+		} else if (clang::UnaryOperator * pointer = clang::dyn_cast<clang::UnaryOperator>(left)) {
+			//若左值为指针，左节点必然为UnaryOperator
+			int64_t address = mStack.back().getPointerVal(pointer);
+			clang::QualType type = pointer->getType();
+			if (type->isIntegerType()) {
+				*((int *)address) = (int)val;
+			} else if (type->isPointerType()) {
+				*((int64_t *)address) = val;
+			}
 		}
 	} else {
 		int64_t leftVal = getStmtVal(left);
 		int64_t rightVal = getStmtVal(right);
+		clang::QualType leftType = left->getType();
+		clang::QualType rightType = right->getType();
+		if (leftType->isPointerType() && rightType->isIntegerType()) {
+			const clang::PointerType * pType = clang::dyn_cast<clang::PointerType>(leftType.getTypePtr());
+			clang::QualType peType = pType->getPointeeType();
+			if (peType->isIntegerType()) {
+				rightVal *= sizeof(int);
+			} else if (peType->isPointerType()) {
+				rightVal *= sizeof(int64_t);
+			}
+		} else if (rightType->isPointerType() && leftType->isIntegerType()) {
+			const clang::PointerType * pType = clang::dyn_cast<clang::PointerType>(rightType.getTypePtr());
+			clang::QualType peType = pType->getPointeeType();
+			if (peType->isIntegerType()) {
+				leftVal *= sizeof(int);
+			} else if (peType->isPointerType()) {
+				leftVal *= sizeof(int64_t);
+			}
+		}
 		#ifdef _DEBUG
 			std::cout << " Left value " << leftVal << " Right value " << rightVal;
 		#endif
@@ -148,7 +194,20 @@ void Environment::unop(clang::UnaryOperator * uop) {
 		case clang::UO_Minus :
 			mStack.back().bindStmt(uop, -subVal);
 			break;
+		case clang::UO_Deref :
+			clang::QualType type = uop->getType();
+			if (type->isIntegerType()) {
+				mStack.back().bindStmt(uop, *((int *)subVal));
+			} else if (type->isPointerType()) {
+				mStack.back().bindStmt(uop, *((int64_t *)subVal));
+			}
+			mStack.back().bindPointer(uop, subVal);
+			break;
 	}
+}
+
+void Environment::paren(clang::ParenExpr * paren) {
+	mStack.back().bindStmt(paren, getStmtVal(paren->getSubExpr()));
 }
 
 void Environment::decl(clang::DeclStmt * declstmt, const clang::ASTContext& context) {
@@ -168,12 +227,33 @@ void Environment::decl(clang::DeclStmt * declstmt, const clang::ASTContext& cont
 				mStack.back().bindDecl(vardecl, val);
 			} else if (type->isArrayType()) {
 				const clang::ConstantArrayType *array = clang::dyn_cast<clang::ConstantArrayType>(type.getTypePtr());
-          		int64_t size = array->getSize().getSExtValue();
-          		int64_t * arrayAddress = new int64_t[size];
-				for (int i = 0; i < size; i++) {
-					arrayAddress[i] = 0;
+          		int size = array->getSize().getSExtValue();
+				clang::QualType type = array->getElementType();
+				void * arrayAddress = NULL;
+				if (type->isIntegerType()) {
+					arrayAddress = malloc(size*sizeof(int));
+					for (int i = 0; i < size; i++) {
+						((int *)arrayAddress)[i] = 0;
+					}
+				} else if (type->isPointerType()) {
+          			arrayAddress = malloc(size*sizeof(int64_t));
+					for (int i = 0; i < size; i++) {
+						((int64_t *)arrayAddress)[i] = 0;
+					}
 				}
+				
 				mStack.back().bindDecl(vardecl, (int64_t)arrayAddress);
+			} else if (type->isPointerType() && !type->isFunctionPointerType()) {
+				int64_t * val = NULL;
+				if (vardecl->hasInit()) {
+					clang::Expr * init = vardecl->getInit();
+					llvm::APSInt intResult = llvm::APSInt();
+					if (init->isIntegerConstantExpr(intResult, context)){
+						val = (int64_t *)malloc(sizeof(int64_t));
+						*val = intResult.getExtValue();
+					}
+				}
+				mStack.back().bindDecl(vardecl, (int64_t)val);
 			}
 		}
 	}
@@ -184,7 +264,7 @@ void Environment::declref(clang::DeclRefExpr * declref) {
 	int64_t val;
 	clang::Decl * decl;
 	clang::QualType type = declref->getType();
-	if (type->isIntegerType() || type->isArrayType()) {
+	if (type->isIntegerType() || type->isArrayType() || (type->isPointerType() && !type->isFunctionPointerType())) {
 		decl = declref->getFoundDecl();
 		val = getDeclVal(decl);
 		mStack.back().bindStmt(declref, val);
@@ -196,10 +276,7 @@ void Environment::cast(clang::CastExpr * castexpr) {
 	int64_t val;
 	clang::Expr * expr = castexpr->getSubExpr();
 	clang::QualType type = castexpr->getType();
-	if (type->isIntegerType()) {
-		val = getStmtVal(expr);
-		mStack.back().bindStmt(castexpr, val);
-	} else if (type->isPointerType() && !type->isFunctionPointerType()) {
+	if (type->isIntegerType() || (type->isPointerType() && !type->isFunctionPointerType())) {
 		val = getStmtVal(expr);
 		mStack.back().bindStmt(castexpr, val);
 	}
@@ -208,7 +285,16 @@ void Environment::cast(clang::CastExpr * castexpr) {
 void Environment::array(clang::ArraySubscriptExpr * array) {
 	clang::Expr * base = array->getBase();
 	clang::Expr * idx = array->getIdx();
-	int64_t address = getStmtVal(base) + getStmtVal(idx);
+	int stride;
+	clang::QualType type = base->getType();
+	const clang::PointerType * pType= clang::dyn_cast<clang::PointerType>(type.getTypePtr());
+	clang::QualType peType = pType->getPointeeType();
+	if (peType->isIntegerType()) {
+		stride = sizeof(int);
+	} else if (peType->isPointerType()) {
+		stride = sizeof(int64_t);
+	}
+	int64_t address = getStmtVal(base) + getStmtVal(idx) * stride;
 	mStack.back().bindStmt(array, *((int64_t *)address));
 	mStack.back().bindPointer(array, address);
 }
@@ -219,4 +305,19 @@ void Environment::literal(clang::IntegerLiteral * literal, const clang::ASTConte
 	literal->isIntegerConstantExpr(intResult, context);
 	val = intResult.getExtValue();
 	mHeap.bindStmt(literal, val);
+}
+
+//只考虑sizeof
+void Environment::ueotte(clang::UnaryExprOrTypeTraitExpr * ueotte) {
+	int64_t val = 0;
+	clang::UnaryExprOrTypeTrait kind = ueotte->getKind();
+	if (kind == clang::UETT_SizeOf) {
+		clang::QualType type = ueotte->getArgumentType();
+		if (type->isIntegerType()) {
+			val = 4;
+		} else if (type->isPointerType()) {
+			val = 8;
+		}
+	}
+	mStack.back().bindStmt(ueotte, val);
 }
