@@ -11,7 +11,7 @@ public:
 	virtual void VisitBinaryOperator (clang::BinaryOperator * bop) {
 		VisitStmt(bop);
 		#ifdef _DEBUG
-			std::cout << "Processing BinaryOperator " << bop << std::endl;
+			std::cout << "Processing BinaryOperator" << std::endl;
 		#endif
 		mEnv->binop(bop);
 	}
@@ -19,7 +19,7 @@ public:
 	virtual void VisitUnaryOperator (clang::UnaryOperator * uop) {
 		VisitStmt(uop);
 		#ifdef _DEBUG
-			std::cout << "Processing UnaryOperator " << uop << std::endl;
+			std::cout << "Processing UnaryOperator" << std::endl;
 		#endif
 		mEnv->unop(uop);
 	}
@@ -27,7 +27,7 @@ public:
 	virtual void VisitDeclRefExpr(clang::DeclRefExpr * expr) {
 		VisitStmt(expr);
 		#ifdef _DEBUG
-			std::cout << "Processing DeclRefExpr " << expr << std::endl;
+			std::cout << "Processing DeclRefExpr" << std::endl;
 		#endif
 		mEnv->declref(expr);
 	}
@@ -35,7 +35,7 @@ public:
 	virtual void VisitCastExpr(clang::CastExpr * expr) {
 		VisitStmt(expr);
 		#ifdef _DEBUG
-			std::cout << "Processing CastExpr " << expr << std::endl;
+			std::cout << "Processing CastExpr" << std::endl;
 		#endif
 		mEnv->cast(expr);
 	}
@@ -43,7 +43,7 @@ public:
 	virtual void VisitCallExpr(clang::CallExpr * call) {
 		VisitStmt(call);
 		#ifdef _DEBUG
-			std::cout << "Processing CallExpr " << call << std::endl;
+			std::cout << "Processing CallExpr" << std::endl;
 		#endif
 		if (mEnv->beforeCall(call)) {
 			VisitStmt(call->getDirectCallee()->getBody());
@@ -51,46 +51,63 @@ public:
 		}
 	}
 
+	virtual void VisitArraySubscriptExpr(clang::ArraySubscriptExpr * array) {
+		VisitStmt(array);
+		#ifdef _DEBUG
+			std::cout << "Processing ArraySubscriptExpr" << std::endl;
+		#endif
+		mEnv->array(array);
+	}
+
 	virtual void VisitDeclStmt(clang::DeclStmt * declstmt) {
 		VisitStmt(declstmt);
 		#ifdef _DEBUG
-			std::cout << "Processing DeclStmt " << declstmt << std::endl;
+			std::cout << "Processing DeclStmt" << std::endl;
 		#endif
 		mEnv->decl(declstmt, mContext);
 	}
 
 	virtual void VisitIntegerLiteral(clang::IntegerLiteral * literal) {
 		#ifdef _DEBUG
-			std::cout << "Processing IntegerLiteral " << literal << std::endl;
+			std::cout << "Processing IntegerLiteral" << std::endl;
 		#endif
 		mEnv->literal(literal, mContext);
 	}
 
 	virtual void VisitIfStmt(clang::IfStmt * ifstmt) {
 		#ifdef _DEBUG
-			std::cout << "Processing IfStmt " << ifstmt << std::endl;
+			std::cout << "Processing IfStmt" << std::endl;
 		#endif
 		clang::Expr * cond = ifstmt->getCond();
 		clang::Stmt * then = ifstmt->getThen();
 		clang::Stmt * els = ifstmt->getElse();
-		//VisitStmt方法只访问所有子stmt，而Visit方法同时访问stmt本身
+		//VisitStmt()只访问所有子stmt，而Visit()同时访问stmt本身，但要求stmt不为空指针
 		Visit(cond);
 		if (mEnv->cond(cond)) {
+			#ifdef _DEBUG
+				std::cout << " Into then" << std::endl;
+			#endif
 			Visit(then);
-		} else {
+		} else if (els) {
+			#ifdef _DEBUG
+				std::cout << " Into else" << std::endl;
+			#endif
 			Visit(els);
 		}
 	}
 
 	virtual void VisitWhileStmt(clang::WhileStmt * whilestmt) {
 		#ifdef _DEBUG
-			std::cout << "Processing WhileStmt " << whilestmt << std::endl;
+			int _i = 1;
 		#endif
 		clang::Expr * cond = whilestmt->getCond();
 		clang::Stmt * body = whilestmt->getBody();
 		while (true) {
 			Visit(cond);
 			if (!mEnv->cond(cond)) break;
+			#ifdef _DEBUG
+				std::cout << "Processing WhileStmt " << _i++ << std::endl;
+			#endif
 			//getbody()返回类型为CompundStmt
 			VisitStmt(body);
 		}
@@ -98,25 +115,28 @@ public:
 
 	virtual void VisitForStmt(clang::ForStmt * forstmt) {
 		#ifdef _DEBUG
-			std::cout << "Processing ForStmt " << forstmt << std::endl;
+			int _i = 1;
 		#endif
 		clang::Stmt * init = forstmt->getInit();
 		clang::Expr * cond = forstmt->getCond();
 		clang::Expr * inc = forstmt->getInc();
 		clang::Stmt * body = forstmt->getBody();
-		Visit(init);
+		if (init) Visit(init);
 		while (true) {
 			Visit(cond);
 			if (!mEnv->cond(cond)) break;
+			#ifdef _DEBUG
+				std::cout << "Processing ForStmt " << _i++ << std::endl;
+			#endif
 			VisitStmt(body);
-			Visit(inc);
+			if (inc) Visit(inc);
 		}
 	}
 
 	virtual void VisitReturnStmt(clang::ReturnStmt * restmt) {
 		VisitStmt(restmt);
 		#ifdef _DEBUG
-			std::cout << "Processing ReturnStmt " << restmt << std::endl;
+			std::cout << "Processing ReturnStmt" << std::endl;
 		#endif
 		mEnv->returnStmt(restmt);
 	}

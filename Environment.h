@@ -20,8 +20,10 @@ class InterpreterVisitor;
 class StackFrame {
 	/// StackFrame maps Variable Declaration to Value
 	/// Which are either integer or addresses (also represented using an Integer value)
-	std::map<clang::Decl*, int> mVars;
-	std::map<clang::Stmt*, int> mExprs;
+	std::map<clang::Decl*, int64_t> mVars;
+	std::map<clang::Stmt*, int64_t> mExprs;
+	// 保存地址
+	std::map<clang::Stmt*, int64_t> mPointers;
 	/// The current stmt
 	clang::Stmt * mPC;
 	int returnVal;
@@ -29,7 +31,8 @@ class StackFrame {
 public:
 	StackFrame() : mVars(), mExprs(), mPC() {}
 
-	void bindDecl(clang::Decl* decl, int val) {
+	//Vars
+	void bindDecl(clang::Decl* decl, int64_t val) {
 		mVars[decl] = val;
 	}
 
@@ -37,12 +40,13 @@ public:
 		return mVars.find(decl) != mVars.end();
 	}
 
-	int getDeclVal(clang::Decl * decl) {
+	int64_t getDeclVal(clang::Decl * decl) {
 		assert (mVars.find(decl) != mVars.end());
 		return mVars.find(decl)->second;
 	}
 
-	void bindStmt(clang::Stmt * stmt, int val) {
+	//Stmts
+	void bindStmt(clang::Stmt * stmt, int64_t val) {
 		mExprs[stmt] = val;
 	}
 
@@ -50,11 +54,22 @@ public:
 		return mExprs.find(stmt) != mExprs.end();
 	}
 
-	int getStmtVal(clang::Stmt * stmt) {
+	int64_t getStmtVal(clang::Stmt * stmt) {
 		assert (mExprs.find(stmt) != mExprs.end());
 		return mExprs[stmt];
 	}
 
+	//Pointers
+	void bindPointer(clang::Stmt * stmt, int64_t val) {
+		mPointers[stmt] = val;
+	}
+
+	int64_t getPointerVal(clang::Stmt * stmt) {
+		assert (mPointers.find(stmt) != mPointers.end());
+		return mPointers[stmt];
+	}
+
+	//PC
 	void setPC(clang::Stmt * stmt) {
 		mPC = stmt;
 	}
@@ -63,6 +78,7 @@ public:
 		return mPC;
 	}
 
+	//returnVal
 	void setReturn(int r) {
 		returnVal = r;
 	}
@@ -74,34 +90,34 @@ public:
 
 /// Heap maps address to a value
 class Heap {
-	std::map<clang::Decl*, int> mVars;
-	std::map<clang::Stmt*, int> mExprs;
+	std::map<clang::Decl*, int64_t> mVars;
+	std::map<clang::Stmt*, int64_t> mExprs;
 
 public:
 	Heap() : mVars() {}
 
-	void bindDecl(clang::Decl* decl, int val) {
+	void bindDecl(clang::Decl* decl, int64_t val) {
 		mVars[decl] = val;
 	}
 
-	int getDeclVal(clang::Decl * decl) {
+	int64_t getDeclVal(clang::Decl * decl) {
 		assert (mVars.find(decl) != mVars.end());
 		return mVars.find(decl)->second;
 	}
 
-	void bindStmt(clang::Stmt * stmt, int val) {
+	void bindStmt(clang::Stmt * stmt, int64_t val) {
 		mExprs[stmt] = val;
 	}
 
-	int getStmtVal(clang::Stmt * stmt) {
+	int64_t getStmtVal(clang::Stmt * stmt) {
 		assert (mExprs.find(stmt) != mExprs.end());
 		return mExprs[stmt];
 	}
 
-	int Malloc(int size) ;
-	void Free (int addr) ;
-	void Update(int addr, int val) ;
-	int get(int addr);
+	int64_t Malloc(int64_t size) ;
+	void Free (int64_t addr) ;
+	void Update(int64_t addr, int64_t val) ;
+	int64_t get(int64_t addr);
 };
 
 class Environment {
@@ -123,8 +139,8 @@ public:
 
 	clang::FunctionDecl * getEntry() { return mEntry; }
 
-	int getStmtVal(clang::Stmt * stmt) {
-		int val;
+	int64_t getStmtVal(clang::Stmt * stmt) {
+		int64_t val;
 		if (mStack.back().findStmtVal(stmt)) {
 			val = mStack.back().getStmtVal(stmt);
 		} else {
@@ -133,8 +149,8 @@ public:
 		return val;
 	}
 
-	int getDeclVal(clang::Decl * decl) {
-		int val;
+	int64_t getDeclVal(clang::Decl * decl) {
+		int64_t val;
 		if (mStack.back().findDeclVal(decl)) {
 			val = mStack.back().getDeclVal(decl);
 		} else {
@@ -149,6 +165,7 @@ public:
 	void decl(clang::DeclStmt * declstmt, const clang::ASTContext& context);
 	void declref(clang::DeclRefExpr * declref);
 	void cast(clang::CastExpr * castexpr);
+	void array(clang::ArraySubscriptExpr * array);
 	bool beforeCall(clang::CallExpr * callexpr);
 	void afterCall(clang::CallExpr * callexpr);
 	bool cond(clang::Expr * cond);
