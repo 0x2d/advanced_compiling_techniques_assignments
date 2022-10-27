@@ -21,10 +21,11 @@ void Environment::init(clang::TranslationUnitDecl * unit, const clang::ASTContex
 		}
 	}
 	mStack.push_back(StackFrame());
+	mStack.back().setPC(mEntry);
 }
 
+//返回值为false，则为内建函数；返回值为true，则为自定义函数，需要执行afterCall
 bool Environment::beforeCall(clang::CallExpr * callexpr) {
-	mStack.back().setPC(callexpr);
 	int64_t val = 0;
 	clang::FunctionDecl * callee = callexpr->getDirectCallee();
 	if (callee == mInput) {
@@ -54,16 +55,21 @@ bool Environment::beforeCall(clang::CallExpr * callexpr) {
 		int64_t vals[numArgs];
 		clang::Expr * decls[numArgs];
 		clang::ParmVarDecl * params[numArgs];
+		//指向函数定义，而非函数声明
+		if (callee->isDefined()) {
+			callee = callee->getDefinition();
+		}
 		for (int i = 0; i < numArgs; i++) {
 			decls[i] = callexpr->getArg(i);
 			vals[i] = getStmtVal(decls[i]);
 			params[i] = callee->getParamDecl(i);
 		}
 		mStack.push_back(StackFrame());
+		mStack.back().setPC(callee);
 		for (int i = 0; i < numArgs; i++) {
 			mStack.back().bindDecl(params[i], vals[i]);
 			#ifdef _DEBUG
-				std::cout << ' ' << params[i] << " : " << vals[i] << std::endl;
+				std::cout << " Pushing function param " << vals[i] << std::endl;
 			#endif
 		}
 		return true;
@@ -84,7 +90,6 @@ void Environment::returnStmt(clang::ReturnStmt * restmt) {
 	mStack.back().setReturn(getStmtVal(restmt->getRetValue()));
 }
 
-///home/ouyang/llvm-project/clang/include/clang/AST/OperationKinds.def
 void Environment::binop(clang::BinaryOperator * bop) {
 	clang::Expr * left = bop->getLHS();
 	clang::Expr * right = bop->getRHS();
@@ -99,7 +104,7 @@ void Environment::binop(clang::BinaryOperator * bop) {
 			clang::Decl * decl = declexpr->getFoundDecl();
 			mStack.back().bindDecl(decl, val);
 		} else if (clang::ArraySubscriptExpr * array = clang::dyn_cast<clang::ArraySubscriptExpr>(left)) {
-			//若左值为数组，左节点必然为ArraySubscriptExpr
+			//若左值为数组，左节点必然为ArraySubscriptExpr，因此在ArraySubscriptExpr阶段分别存储值和地址
 			int64_t address = mStack.back().getPointerVal(array);
 			clang::QualType type = array->getType();
 			if (type->isIntegerType()) {
@@ -108,7 +113,7 @@ void Environment::binop(clang::BinaryOperator * bop) {
 				*((int64_t *)address) = val;
 			}
 		} else if (clang::UnaryOperator * pointer = clang::dyn_cast<clang::UnaryOperator>(left)) {
-			//若左值为指针，左节点必然为UnaryOperator
+			//若左值为指针，左节点必然为UnaryOperator，因此在UnaryOperator阶段分别存储值和地址
 			int64_t address = mStack.back().getPointerVal(pointer);
 			clang::QualType type = pointer->getType();
 			if (type->isIntegerType()) {
@@ -160,6 +165,18 @@ void Environment::binop(clang::BinaryOperator * bop) {
 					std::cout << " Result " << (leftVal == rightVal) << std::endl;
 				#endif
 				mStack.back().bindStmt(bop, leftVal == rightVal);
+				break;
+			case clang::BO_GE :
+				#ifdef _DEBUG
+					std::cout << " Result " << (leftVal >= rightVal) << std::endl;
+				#endif
+				mStack.back().bindStmt(bop, leftVal >= rightVal);
+				break;
+			case clang::BO_LE :
+				#ifdef _DEBUG
+					std::cout << " Result " << (leftVal <= rightVal) << std::endl;
+				#endif
+				mStack.back().bindStmt(bop, leftVal <= rightVal);
 				break;
 			case clang::BO_Sub :
 				#ifdef _DEBUG
@@ -244,7 +261,6 @@ void Environment::decl(clang::DeclStmt * declstmt, const clang::ASTContext& cont
 						((int64_t *)arrayAddress)[i] = 0;
 					}
 				}
-				
 				mStack.back().bindDecl(vardecl, (int64_t)arrayAddress);
 			} else if (type->isPointerType() && !type->isFunctionPointerType()) {
 				int64_t * val = NULL;
@@ -263,22 +279,17 @@ void Environment::decl(clang::DeclStmt * declstmt, const clang::ASTContext& cont
 }
 
 void Environment::declref(clang::DeclRefExpr * declref) {
-	mStack.back().setPC(declref);
 	int64_t val;
 	clang::Decl * decl;
 	clang::QualType type = declref->getType();
 	if (type->isIntegerType() || type->isArrayType() || (type->isPointerType() && !type->isFunctionPointerType())) {
 		decl = declref->getFoundDecl();
-		#ifdef _DEBUG
-			std::cout << " Refering " << decl << std::endl;
-		#endif
 		val = getDeclVal(decl);
 		mStack.back().bindStmt(declref, val);
 	}
 }
 
 void Environment::cast(clang::CastExpr * castexpr) {
-	mStack.back().setPC(castexpr);
 	int64_t val;
 	clang::Expr * expr = castexpr->getSubExpr();
 	clang::QualType type = castexpr->getType();
@@ -314,10 +325,10 @@ void Environment::literal(clang::IntegerLiteral * literal, const clang::ASTConte
 	mHeap.bindStmt(literal, val);
 }
 
-//只考虑sizeof
 void Environment::ueotte(clang::UnaryExprOrTypeTraitExpr * ueotte) {
 	int64_t val = 0;
 	clang::UnaryExprOrTypeTrait kind = ueotte->getKind();
+	//目前只考虑sizeof
 	if (kind == clang::UETT_SizeOf) {
 		clang::QualType type = ueotte->getArgumentType();
 		if (type->isIntegerType()) {

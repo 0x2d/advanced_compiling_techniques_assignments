@@ -1,6 +1,9 @@
 # ast-interpreter
 
+中国科学院大学2022秋季学期编译程序高级教程 assignment1 ast-interpreter 的实现。使用Clang前端，构建一个简单的C语言解释器。
+
 ## Build
+环境：```llvm-10.0.1```
 ```sh
 mkdir build
 cd build
@@ -15,9 +18,13 @@ make -j6
 
 - ```./run_tests.sh```
 
-    用于自动评测所有测试程序（必须关闭ast-interpreter的DEBUG开关才能使用）。
+    用于自动评测所有测试程序（必须关闭ast-interpreter的DEBUG开关）。
 
-## Logs
+## Commit History
+
+### 20221027
+1. 函数调用时令FunctionDecl指针指向函数定义而非函数声明；支持二元运算符>=、<=；虽然不支持char类型，但是通过了test21-24。完结撒花！！！
+
 ### 20221026
 1. 初步支持for语句；通过test07至11。
 2. 初步支持数组变量，对于ArraySubscriptExpr同时提供值和地址，默认使用值，根据需要使用地址；修改了一些由于指针为空导致的bug；细化了调试信息，增强了可视性；通过test12至16。

@@ -26,9 +26,10 @@ class StackFrame {
 	std::map<clang::Stmt*, int64_t> mExprs;
 	// 保存地址
 	std::map<clang::Stmt*, int64_t> mPointers;
-	/// The current stmt
-	clang::Stmt * mPC;
-	int returnVal;
+	/// The current stmt 记录当前运行中的函数定义
+	clang::FunctionDecl * mPC;
+	// 返回值
+	int64_t returnVal;
 
 public:
 	StackFrame() : mVars(), mExprs(), mPC() {}
@@ -72,20 +73,20 @@ public:
 	}
 
 	//PC
-	void setPC(clang::Stmt * stmt) {
+	void setPC(clang::FunctionDecl * stmt) {
 		mPC = stmt;
 	}
 
-	clang::Stmt * getPC() {
+	clang::FunctionDecl * getPC() {
 		return mPC;
 	}
 
 	//returnVal
-	void setReturn(int r) {
+	void setReturn(int64_t r) {
 		returnVal = r;
 	}
 
-	int getReturn() {
+	int64_t getReturn() {
 		return returnVal;
 	}
 };
@@ -115,11 +116,6 @@ public:
 		assert (mExprs.find(stmt) != mExprs.end());
 		return mExprs[stmt];
 	}
-
-	int64_t Malloc(int64_t size) ;
-	void Free (int64_t addr) ;
-	void Update(int64_t addr, int64_t val) ;
-	int64_t get(int64_t addr);
 };
 
 class Environment {

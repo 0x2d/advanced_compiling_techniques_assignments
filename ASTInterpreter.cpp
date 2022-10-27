@@ -177,11 +177,10 @@ public:
 		clang::FunctionDecl * entry = mEnv.getEntry();
 		try {
 			mVisitor.VisitStmt(entry->getBody());
-		} catch (const std::exception & e) {
-			#ifdef _DEBUG
-				std::cout << "Program terminated" << std::endl;
-			#endif
-		}
+		} catch (const std::exception & e) {}
+		#ifdef _DEBUG
+			std::cout << "Program terminated" << std::endl;
+		#endif
 	}
 
 private:
