@@ -23,7 +23,7 @@ make -j6
 ## Commit History
 
 ### 20221028
-1. 将Char类型视为Integer类型，~~ 想不明白为啥之前无视Char类型也能过测试 ~~ 我懂了，因为clang::Type::isInteger()对于所有Char相关的类型也返回true，所以我这次的commit完全没意义。
+1. 将Char类型视为Integer类型， ~~想不明白为啥之前无视Char类型也能过测试~~  我懂了，因为clang::Type::isIntegerType()对于所有Char相关的类型也返回true，所以我这次的commit完全没意义。
 
 ### 20221027
 1. 函数调用时令FunctionDecl指针指向函数定义而非函数声明；支持二元运算符>=、<=；虽然不支持char类型，但是通过了test21-24。完结撒花！！！
