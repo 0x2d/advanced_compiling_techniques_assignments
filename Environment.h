@@ -17,6 +17,8 @@
 //调试开关
 // #define _DEBUG
 
+#define MAX(a,b) ((a)>(b)?(a):(b))
+
 class InterpreterVisitor;
 
 class StackFrame {

@@ -41,7 +41,7 @@ bool Environment::beforeCall(clang::CallExpr * callexpr) {
 	} else if (callee == mMalloc) {
 		clang::Expr * decl = callexpr->getArg(0);
 		val = getStmtVal(decl);
-		void * p = malloc(val);
+		void * p = malloc(MAX(val,4));
 		memset(p, 0, val);
 		mStack.back().bindStmt(callexpr, (int64_t)p);
 		return false;
@@ -107,7 +107,7 @@ void Environment::binop(clang::BinaryOperator * bop) {
 			//若左值为数组，左节点必然为ArraySubscriptExpr，因此在ArraySubscriptExpr阶段分别存储值和地址
 			int64_t address = mStack.back().getPointerVal(array);
 			clang::QualType type = array->getType();
-			if (type->isIntegerType()) {
+			if (type->isIntegerType() || type->isCharType()) {
 				*((int *)address) = (int)val;
 			} else if (type->isPointerType()) {
 				*((int64_t *)address) = val;
@@ -116,7 +116,7 @@ void Environment::binop(clang::BinaryOperator * bop) {
 			//若左值为指针，左节点必然为UnaryOperator，因此在UnaryOperator阶段分别存储值和地址
 			int64_t address = mStack.back().getPointerVal(pointer);
 			clang::QualType type = pointer->getType();
-			if (type->isIntegerType()) {
+			if (type->isIntegerType() || type->isCharType()) {
 				*((int *)address) = (int)val;
 			} else if (type->isPointerType()) {
 				*((int64_t *)address) = val;
@@ -130,7 +130,7 @@ void Environment::binop(clang::BinaryOperator * bop) {
 		if (leftType->isPointerType() && rightType->isIntegerType()) {
 			const clang::PointerType * pType = clang::dyn_cast<clang::PointerType>(leftType.getTypePtr());
 			clang::QualType peType = pType->getPointeeType();
-			if (peType->isIntegerType()) {
+			if (peType->isIntegerType() || peType->isCharType()) {
 				rightVal *= sizeof(int);
 			} else if (peType->isPointerType()) {
 				rightVal *= sizeof(int64_t);
@@ -138,7 +138,7 @@ void Environment::binop(clang::BinaryOperator * bop) {
 		} else if (rightType->isPointerType() && leftType->isIntegerType()) {
 			const clang::PointerType * pType = clang::dyn_cast<clang::PointerType>(rightType.getTypePtr());
 			clang::QualType peType = pType->getPointeeType();
-			if (peType->isIntegerType()) {
+			if (peType->isIntegerType() || peType->isCharType()) {
 				leftVal *= sizeof(int);
 			} else if (peType->isPointerType()) {
 				leftVal *= sizeof(int64_t);
@@ -216,7 +216,7 @@ void Environment::unop(clang::UnaryOperator * uop) {
 			break;
 		case clang::UO_Deref :
 			clang::QualType type = uop->getType();
-			if (type->isIntegerType()) {
+			if (type->isIntegerType() || type->isCharType()) {
 				mStack.back().bindStmt(uop, *((int *)subVal));
 			} else if (type->isPointerType()) {
 				mStack.back().bindStmt(uop, *((int64_t *)subVal));
@@ -235,7 +235,7 @@ void Environment::decl(clang::DeclStmt * declstmt, const clang::ASTContext& cont
 		clang::Decl * decl = *it;
 		if (clang::VarDecl * vardecl = clang::dyn_cast<clang::VarDecl>(decl)) {
 			clang::QualType type = vardecl->getType();
-			if (type->isIntegerType()) {
+			if (type->isIntegerType() || type->isCharType()) {
 				int64_t val = 0;
 				if (vardecl->hasInit()) {
 					clang::Expr * init = vardecl->getInit();
@@ -250,7 +250,7 @@ void Environment::decl(clang::DeclStmt * declstmt, const clang::ASTContext& cont
           		int size = array->getSize().getSExtValue();
 				clang::QualType type = array->getElementType();
 				void * arrayAddress = NULL;
-				if (type->isIntegerType()) {
+				if (type->isIntegerType() || type->isCharType()) {
 					arrayAddress = malloc(size*sizeof(int));
 					for (int i = 0; i < size; i++) {
 						((int *)arrayAddress)[i] = 0;
@@ -282,7 +282,7 @@ void Environment::declref(clang::DeclRefExpr * declref) {
 	int64_t val;
 	clang::Decl * decl;
 	clang::QualType type = declref->getType();
-	if (type->isIntegerType() || type->isArrayType() || (type->isPointerType() && !type->isFunctionPointerType())) {
+	if (type->isIntegerType() || type->isCharType() || type->isArrayType() || (type->isPointerType() && !type->isFunctionPointerType())) {
 		decl = declref->getFoundDecl();
 		val = getDeclVal(decl);
 		mStack.back().bindStmt(declref, val);
@@ -293,7 +293,7 @@ void Environment::cast(clang::CastExpr * castexpr) {
 	int64_t val;
 	clang::Expr * expr = castexpr->getSubExpr();
 	clang::QualType type = castexpr->getType();
-	if (type->isIntegerType() || (type->isPointerType() && !type->isFunctionPointerType())) {
+	if (type->isIntegerType() || type->isCharType() || (type->isPointerType() && !type->isFunctionPointerType())) {
 		val = getStmtVal(expr);
 		mStack.back().bindStmt(castexpr, val);
 	}
@@ -306,7 +306,7 @@ void Environment::array(clang::ArraySubscriptExpr * array) {
 	clang::QualType type = base->getType();
 	const clang::PointerType * pType= clang::dyn_cast<clang::PointerType>(type.getTypePtr());
 	clang::QualType peType = pType->getPointeeType();
-	if (peType->isIntegerType()) {
+	if (peType->isIntegerType() || type->isCharType()) {
 		address = getStmtVal(base) + getStmtVal(idx) * sizeof(int);
 		val = *((int *)address);
 	} else if (peType->isPointerType()) {
@@ -331,7 +331,7 @@ void Environment::ueotte(clang::UnaryExprOrTypeTraitExpr * ueotte) {
 	//目前只考虑sizeof
 	if (kind == clang::UETT_SizeOf) {
 		clang::QualType type = ueotte->getArgumentType();
-		if (type->isIntegerType()) {
+		if (type->isIntegerType() || type->isCharType()) {
 			val = 4;
 		} else if (type->isPointerType()) {
 			val = 8;
