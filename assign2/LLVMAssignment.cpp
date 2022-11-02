@@ -49,7 +49,6 @@ struct EnableFunctionOptPass: public llvm::FunctionPass {
 
 char EnableFunctionOptPass::ID=0;
 
-	
 ///!TODO TO BE COMPLETED BY YOU FOR ASSIGNMENT 2
 ///Updated 11/10/2017 by fargo: make all functions
 ///processed by mem2reg before this pass.
@@ -57,20 +56,21 @@ struct FuncPtrPass : public llvm::ModulePass {
 	static char ID; // Pass identification, replacement for typeid
 	FuncPtrPass() : llvm::ModulePass(ID) {}
 
-	
 	bool runOnModule(llvm::Module &M) override {
 	#ifdef _DEBUG
-		errs() << "Hello: ";
-		errs().write_escaped(M.getName()) << '\n';
+		llvm::errs() << "Hello: ";
+		llvm::errs().write_escaped(M.getName()) << '\n';
 		M.print(llvm::errs(), nullptr);
 		// 该函数在release版的LLVM中没有开启，使用以上函数代替
 		// M.dump();
-		errs()<<"------------------------------\n";
+		llvm::errs()<<"------------------------------\n";
 	#endif
+		for (llvm::Module::iterator fi = M.begin(), fe = M.end(); fi != fe; fi++) {
+			llvm::Function &f = *fi;
+		}
 		return false;
 	}
 };
-
 
 char FuncPtrPass::ID = 0;
 static llvm::RegisterPass<FuncPtrPass> X("funcptrpass", "Print function call instruction");
@@ -79,7 +79,6 @@ static llvm::cl::opt<std::string>
 InputFilename(llvm::cl::Positional,
               llvm::cl::desc("<filename>.bc"),
               llvm::cl::init(""));
-
 
 int main(int argc, char **argv) {
 	llvm::LLVMContext &Context = getGlobalContext();
@@ -92,7 +91,7 @@ int main(int argc, char **argv) {
 	// Load the input module
 	std::unique_ptr<llvm::Module> M = parseIRFile(InputFilename, Err, Context);
 	if (!M) {
-		Err.print(argv[0], errs());
+		Err.print(argv[0], llvm::errs());
 		return 1;
 	}
 
