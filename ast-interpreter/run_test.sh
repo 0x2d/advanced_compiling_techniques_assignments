@@ -1,11 +1,11 @@
 #! /bin/bash
 
-cd /home/ouyang/ast-interpreter
+cd /home/ouyang/advanced_compiling_techniques_assignments/ast-interpreter
 
 answer=(100 10 20 200 10 10 20 10 20 20 5 100 4 20 12 -8 30 10 1020 1020 5 33312826232118161311863491419242934 2442 2442 2442)
 i=0
 
-for file in `ls /home/ouyang/ast-interpreter/test`
+for file in `ls ./test`
 do
     output=$(./build/ast-interpreter "`cat ./test/$file`")
 
