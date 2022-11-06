@@ -23,13 +23,15 @@
 #include <llvm/Transforms/Utils.h>
 
 #include <llvm/IR/Function.h>
+#include <llvm/IR/Instructions.h>
+#include "llvm/IR/IntrinsicInst.h"
 #include <llvm/Pass.h>
 #include <llvm/Support/raw_ostream.h>
 
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
 
-#define _DEBUG
+// #define _DEBUG
 
 static llvm::ManagedStatic<llvm::LLVMContext> GlobalContext;
 static llvm::LLVMContext &getGlobalContext() { return *GlobalContext; }
@@ -56,6 +58,12 @@ struct FuncPtrPass : public llvm::ModulePass {
 	static char ID; // Pass identification, replacement for typeid
 	FuncPtrPass() : llvm::ModulePass(ID) {}
 
+	void handler(llvm::CallInst * callinst) {
+		int lineno = callinst->getDebugLoc().getLine();
+		llvm::Function * func = callinst->getCalledFunction();
+		llvm::outs() << lineno << " : " << func->getName().data() << "\n";
+	}
+
 	bool runOnModule(llvm::Module &M) override {
 	#ifdef _DEBUG
 		llvm::errs() << "Hello: ";
@@ -67,6 +75,16 @@ struct FuncPtrPass : public llvm::ModulePass {
 	#endif
 		for (llvm::Module::iterator fi = M.begin(), fe = M.end(); fi != fe; fi++) {
 			llvm::Function &f = *fi;
+			for (llvm::Function::iterator bi = f.begin(), be = f.end(); bi != be; bi++) {
+				llvm::BasicBlock &b = *bi;
+				for (llvm::BasicBlock::iterator ii = b.begin(), ie = b.end(); ii != ie; ii++) {
+					llvm::Instruction &i = *ii;
+					//需要排除llvm.dbg.value
+					if (llvm::isa<llvm::CallInst>(i) && !llvm::isa<llvm::DbgInfoIntrinsic>(i)) {
+						handler(llvm::dyn_cast<llvm::CallInst>(&i));
+					}
+				}
+			}
 		}
 		return false;
 	}
