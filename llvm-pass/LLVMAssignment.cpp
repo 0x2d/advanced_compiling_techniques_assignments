@@ -25,13 +25,16 @@
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Instructions.h>
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/InstIterator.h"
 #include <llvm/Pass.h>
 #include <llvm/Support/raw_ostream.h>
 
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
 
-#define _DEBUG
+#include <set>
+
+ #define _DEBUG
 
 static llvm::ManagedStatic<llvm::LLVMContext> GlobalContext;
 static llvm::LLVMContext &getGlobalContext() { return *GlobalContext; }
@@ -56,21 +59,44 @@ char EnableFunctionOptPass::ID=0;
 ///processed by mem2reg before this pass.
 struct FuncPtrPass : public llvm::ModulePass {
 	static char ID; // Pass identification, replacement for typeid
+	std::set<std::string> funcNames;
+
 	FuncPtrPass() : llvm::ModulePass(ID) {}
-	
-	void function (llvm::Function * func) {
-		llvm::outs() << func->getName().data();
+
+	void value(llvm::Value * value) {
+		if (llvm::isa<llvm::CallInst>(value)) {
+			callInst(llvm::dyn_cast<llvm::CallInst>(value));
+		} else if (llvm::isa<llvm::Function>(value)) {
+			function(llvm::dyn_cast<llvm::Function>(value));
+		} else if (llvm::isa<llvm::PHINode>(value)) {
+			phiNode(llvm::dyn_cast<llvm::PHINode>(value));
+		} else if (llvm::isa<llvm::Argument>(value)) {
+			argument(llvm::dyn_cast<llvm::Argument>(value));
+		}
 	}
 
-	void phiNode (llvm::PHINode * phinode) {
+	void argument(llvm::Argument * argument) {
+		unsigned argNo = argument->getArgNo();
+		llvm::Function * parent = argument->getParent();
+		for (llvm::Value::user_iterator ui = parent->user_begin(), ue = parent->user_end(); ui != ue; ++ui) {
+			llvm::User * user = *ui;
+			if (llvm::isa<llvm::CallInst>(user)) {
+				llvm::CallInst * callinst = llvm::dyn_cast<llvm::CallInst>(user);
+				llvm::Value * arg = callinst->getOperand(argNo);
+				value(arg);
+			}
+		}
+	}
+	
+	void function(llvm::Function * func) {
+		funcNames.insert(func->getName().str());
+	}
+
+	void phiNode(llvm::PHINode * phinode) {
 		int numPhi = phinode->getNumIncomingValues();
 		for (int i = 0; i < numPhi; i++) {
 			llvm::Value * incomeV = phinode->getIncomingValue(i);
-			if (llvm::isa<llvm::CallInst>(incomeV)) {
-				callInst(llvm::dyn_cast<llvm::CallInst>(incomeV));
-			} else if (llvm::isa<llvm::Function>(incomeV)) {
-				function(llvm::dyn_cast<llvm::Function>(incomeV));
-			}
+			value(incomeV);
 		}
 	}
 
@@ -78,14 +104,22 @@ struct FuncPtrPass : public llvm::ModulePass {
 		int lineno = callinst->getDebugLoc().getLine();
 		llvm::Function * func = callinst->getCalledFunction();
 		if (func) {
-			llvm::outs() << lineno << " : " << func->getName().data() << "\n";
+			llvm::errs() << lineno << " : " << func->getName().str() << "\n";
 		} else {
-			llvm::outs() << lineno << " : ";
+			funcNames.empty();
 			llvm::Value * operand = callinst->getCalledOperand();
-			if (llvm::isa<llvm::PHINode>(operand)) {
-				phiNode(llvm::dyn_cast<llvm::PHINode>(operand));
+			value(operand);
+			llvm::errs() << lineno << " : ";
+			int index = 0;
+			for (std::string s: funcNames) {
+				if (index == 0) {
+					llvm::errs() << s;
+				} else {
+					llvm::errs() << ", " << s;
+				}
+				index++;
 			}
-			llvm::outs() << "\n";
+			llvm::errs() << "\n";
 		}
 	}
 
@@ -98,16 +132,14 @@ struct FuncPtrPass : public llvm::ModulePass {
 		// M.dump();
 		llvm::errs()<<"------------------------------\n";
 	#endif
-		for (llvm::Module::iterator fi = M.begin(), fe = M.end(); fi != fe; fi++) {
-			llvm::Function &f = *fi;
-			for (llvm::Function::iterator bi = f.begin(), be = f.end(); bi != be; bi++) {
-				llvm::BasicBlock &b = *bi;
-				for (llvm::BasicBlock::iterator ii = b.begin(), ie = b.end(); ii != ie; ii++) {
-					llvm::Instruction &i = *ii;
-					//需要排除llvm.dbg.value
-					if (llvm::isa<llvm::CallInst>(i) && !llvm::isa<llvm::DbgInfoIntrinsic>(i)) {
-						callInst(llvm::dyn_cast<llvm::CallInst>(&i));
-					}
+		for (llvm::Function &F : M) {
+			for (llvm::inst_iterator I = llvm::inst_begin(F), E = llvm::inst_end(F); I != E; ++I) {
+				//需要排除llvm.dbg.value
+				if (llvm::isa<llvm::CallInst>(*I) && !llvm::isa<llvm::DbgInfoIntrinsic>(*I)) {
+				#ifdef _DEBUG
+					llvm::errs() << *I << "\n";
+				#endif
+					callInst(llvm::dyn_cast<llvm::CallInst>(&*I));
 				}
 			}
 		}
