@@ -31,7 +31,7 @@
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
 
-// #define _DEBUG
+#define _DEBUG
 
 static llvm::ManagedStatic<llvm::LLVMContext> GlobalContext;
 static llvm::LLVMContext &getGlobalContext() { return *GlobalContext; }
@@ -57,11 +57,36 @@ char EnableFunctionOptPass::ID=0;
 struct FuncPtrPass : public llvm::ModulePass {
 	static char ID; // Pass identification, replacement for typeid
 	FuncPtrPass() : llvm::ModulePass(ID) {}
+	
+	void function (llvm::Function * func) {
+		llvm::outs() << func->getName().data();
+	}
 
-	void handler(llvm::CallInst * callinst) {
+	void phiNode (llvm::PHINode * phinode) {
+		int numPhi = phinode->getNumIncomingValues();
+		for (int i = 0; i < numPhi; i++) {
+			llvm::Value * incomeV = phinode->getIncomingValue(i);
+			if (llvm::isa<llvm::CallInst>(incomeV)) {
+				callInst(llvm::dyn_cast<llvm::CallInst>(incomeV));
+			} else if (llvm::isa<llvm::Function>(incomeV)) {
+				function(llvm::dyn_cast<llvm::Function>(incomeV));
+			}
+		}
+	}
+
+	void callInst(llvm::CallInst * callinst) {
 		int lineno = callinst->getDebugLoc().getLine();
 		llvm::Function * func = callinst->getCalledFunction();
-		llvm::outs() << lineno << " : " << func->getName().data() << "\n";
+		if (func) {
+			llvm::outs() << lineno << " : " << func->getName().data() << "\n";
+		} else {
+			llvm::outs() << lineno << " : ";
+			llvm::Value * operand = callinst->getCalledOperand();
+			if (llvm::isa<llvm::PHINode>(operand)) {
+				phiNode(llvm::dyn_cast<llvm::PHINode>(operand));
+			}
+			llvm::outs() << "\n";
+		}
 	}
 
 	bool runOnModule(llvm::Module &M) override {
@@ -81,7 +106,7 @@ struct FuncPtrPass : public llvm::ModulePass {
 					llvm::Instruction &i = *ii;
 					//需要排除llvm.dbg.value
 					if (llvm::isa<llvm::CallInst>(i) && !llvm::isa<llvm::DbgInfoIntrinsic>(i)) {
-						handler(llvm::dyn_cast<llvm::CallInst>(&i));
+						callInst(llvm::dyn_cast<llvm::CallInst>(&i));
 					}
 				}
 			}

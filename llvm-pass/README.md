@@ -1,4 +1,6 @@
-# assign2
+# llvm-pass
+
+中国科学院大学2022秋季学期编译程序高级教程 assignment2 llvm-pass 的实现。编写llvm pass打印IR中的函数调用。
 
 ## Build
 环境：```llvm-10.0.1```
@@ -10,7 +12,7 @@ make
 ```
 
 ## Useful Commands
-- ```clang -emit-llvm -o0 -g -c ./test/testxx.c -o ./test/bitcode/testxx.bc```
+- ```clang -emit-llvm -o0 -g -c ./test/testxx.c -o ./bitcode/testxx.bc```
 
     用于生成某个测试程序的bitcode。
 
@@ -19,6 +21,9 @@ make
     用于自动运行所有测试程序。
 
 ## Commit Logs
+
+### 20221107
+1. 初步支持PHINode；通过test01。
 
 ### 20221106
 1. 完成了基本的指令遍历；通过test00。
