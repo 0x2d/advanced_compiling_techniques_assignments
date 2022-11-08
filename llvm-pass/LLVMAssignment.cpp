@@ -65,7 +65,7 @@ struct FuncPtrPass : public llvm::ModulePass {
 
 	void value(llvm::Value * value) {
 		if (llvm::isa<llvm::CallInst>(value)) {
-			callInst(llvm::dyn_cast<llvm::CallInst>(value));
+			callInstAgain(llvm::dyn_cast<llvm::CallInst>(value));
 		} else if (llvm::isa<llvm::Function>(value)) {
 			function(llvm::dyn_cast<llvm::Function>(value));
 		} else if (llvm::isa<llvm::PHINode>(value)) {
@@ -75,24 +75,69 @@ struct FuncPtrPass : public llvm::ModulePass {
 		}
 	}
 
+	void callInstAgain(llvm::CallInst * callinst) {
+	#ifdef _DEBUG
+		llvm::errs() << "	CallInst" << "\n";
+	#endif
+		llvm::Function * func = callinst->getCalledFunction();
+		if (func) {
+			functionReturn(func);
+		} else {
+			llvm::Value * operand = callinst->getCalledOperand();
+			if (llvm::isa<llvm::PHINode>(operand)) {
+				llvm::PHINode * phinode = llvm::dyn_cast<llvm::PHINode>(operand);
+				int numPhi = phinode->getNumIncomingValues();
+				for (int i = 0; i < numPhi; i++) {
+					llvm::Value * incomeV = phinode->getIncomingValue(i);
+					functionReturn(llvm::dyn_cast<llvm::Function>(incomeV));
+				}
+			}
+		}
+	}
+
 	void argument(llvm::Argument * argument) {
+	#ifdef _DEBUG
+		llvm::errs() << "	Argument" << "\n";
+	#endif
 		unsigned argNo = argument->getArgNo();
 		llvm::Function * parent = argument->getParent();
 		for (llvm::Value::user_iterator ui = parent->user_begin(), ue = parent->user_end(); ui != ue; ++ui) {
 			llvm::User * user = *ui;
+			
 			if (llvm::isa<llvm::CallInst>(user)) {
 				llvm::CallInst * callinst = llvm::dyn_cast<llvm::CallInst>(user);
-				llvm::Value * arg = callinst->getOperand(argNo);
-				value(arg);
+				llvm::Value * operand = callinst->getOperand(argNo);
+				value(operand);
+			} else if (llvm::isa<llvm::PHINode>(user)) {
+				//
+			}
+		}
+	}
+
+	void functionReturn(llvm::Function * F) {
+	#ifdef _DEBUG
+		llvm::errs() << "	FunctionReturn" << "\n";
+	#endif
+		for (llvm::inst_iterator I = llvm::inst_begin(F), E = llvm::inst_end(F); I != E; ++I) {
+			if (llvm::isa<llvm::ReturnInst>(*I)) {
+				llvm::ReturnInst * ret =  llvm::dyn_cast<llvm::ReturnInst>(&*I);
+				llvm::Value * retV = ret->getReturnValue();
+				value(retV);
 			}
 		}
 	}
 	
 	void function(llvm::Function * func) {
+	#ifdef _DEBUG
+		llvm::errs() << "	Function" << "\n";
+	#endif
 		funcNames.insert(func->getName().str());
 	}
 
 	void phiNode(llvm::PHINode * phinode) {
+	#ifdef _DEBUG
+		llvm::errs() << "	PHINode" << "\n";
+	#endif
 		int numPhi = phinode->getNumIncomingValues();
 		for (int i = 0; i < numPhi; i++) {
 			llvm::Value * incomeV = phinode->getIncomingValue(i);
