@@ -34,7 +34,7 @@
 
 #include <set>
 
- #define _DEBUG
+// #define _DEBUG
 
 static llvm::ManagedStatic<llvm::LLVMContext> GlobalContext;
 static llvm::LLVMContext &getGlobalContext() { return *GlobalContext; }
@@ -109,7 +109,14 @@ struct FuncPtrPass : public llvm::ModulePass {
 				llvm::Value * operand = callinst->getOperand(argNo);
 				value(operand);
 			} else if (llvm::isa<llvm::PHINode>(user)) {
-				//
+				for (llvm::Value::user_iterator ui = user->user_begin(), ue = user->user_end(); ui != ue; ++ui) {
+					llvm::User * phiuser = *ui;
+					if (llvm::isa<llvm::CallInst>(phiuser)) {
+						llvm::CallInst * callinst = llvm::dyn_cast<llvm::CallInst>(phiuser);
+						llvm::Value * operand = callinst->getOperand(argNo);
+						value(operand);
+					}
+				}
 			}
 		}
 	}
@@ -151,7 +158,7 @@ struct FuncPtrPass : public llvm::ModulePass {
 		if (func) {
 			llvm::errs() << lineno << " : " << func->getName().str() << "\n";
 		} else {
-			funcNames.empty();
+			funcNames.clear();
 			llvm::Value * operand = callinst->getCalledOperand();
 			value(operand);
 			llvm::errs() << lineno << " : ";
