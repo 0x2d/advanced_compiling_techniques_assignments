@@ -33,7 +33,9 @@
 #include <llvm/Bitcode/BitcodeWriter.h>
 
 #include <set>
+#include <stdexcept>
 
+// DEBUG宏定义
 // #define _DEBUG
 
 static llvm::ManagedStatic<llvm::LLVMContext> GlobalContext;
@@ -60,6 +62,9 @@ char EnableFunctionOptPass::ID=0;
 struct FuncPtrPass : public llvm::ModulePass {
 	static char ID; // Pass identification, replacement for typeid
 	std::set<std::string> funcNames;
+	//用于记录嵌套调用的级数，非嵌套调用时，应记录函数名；嵌套调用时，应获取函数的返回值
+	int callNest;
+	int iter = 0;
 
 	FuncPtrPass() : llvm::ModulePass(ID) {}
 
@@ -75,13 +80,19 @@ struct FuncPtrPass : public llvm::ModulePass {
 		}
 	}
 
+	//非首次访问CallInst，意味着发生了嵌套调用
 	void callInstAgain(llvm::CallInst * callinst) {
+		iter++;
+		if (iter > 50) {	//这个数是随便设的
+			throw std::exception();	//真不会做了，救命
+		}
 	#ifdef _DEBUG
 		llvm::errs() << "	CallInstAgain" << "\n";
 	#endif
 		llvm::Function * func = callinst->getCalledFunction();
 		if (func) {
-			functionReturn(func);
+			callNest++;
+			function(func);
 		} else {
 			llvm::Value * operand = callinst->getCalledOperand();
 			if (llvm::isa<llvm::PHINode>(operand)) {
@@ -89,14 +100,17 @@ struct FuncPtrPass : public llvm::ModulePass {
 				int numPhi = phinode->getNumIncomingValues();
 				for (int i = 0; i < numPhi; i++) {
 					llvm::Value * incomeV = phinode->getIncomingValue(i);
-					functionReturn(llvm::dyn_cast<llvm::Function>(incomeV));
+					callNest++;
+					function(llvm::dyn_cast<llvm::Function>(incomeV));
 				}
 			} else if (llvm::isa<llvm::Argument>(operand)) {
-				//
+				callNest++;
+				argument(llvm::dyn_cast<llvm::Argument>(operand));
 			}
 		}
 	}
 
+	//访问函数形参，应根据函数的def-use链追溯到函数实参
 	void argument(llvm::Argument * argument) {
 	#ifdef _DEBUG
 		llvm::errs() << "	Argument" << "\n";
@@ -108,58 +122,99 @@ struct FuncPtrPass : public llvm::ModulePass {
 			
 			if (llvm::isa<llvm::CallInst>(user)) {
 			#ifdef _DEBUG
-				llvm::errs() << "	CallInstUser" << "\n";
+				llvm::errs() << "		CallInstUser" << "\n";
 			#endif
 				llvm::CallInst * callinst = llvm::dyn_cast<llvm::CallInst>(user);
-				llvm::Value * operand = callinst->getOperand(argNo);
-				value(operand);
+				llvm::Function * called = callinst->getCalledFunction();
+				if (called == parent) {
+					llvm::Value * operand = callinst->getOperand(argNo);
+					value(operand);
+				} else {	//此时user调用的并不是我们查找的函数，真正的函数调用发生在该函数内部
+					for (llvm::inst_iterator I = llvm::inst_begin(called), E = llvm::inst_end(called); I != E; ++I) {
+						if (llvm::isa<llvm::ReturnInst>(*I)) {
+							llvm::ReturnInst * ret =  llvm::dyn_cast<llvm::ReturnInst>(&*I);
+							llvm::Value * retV = ret->getReturnValue();
+							if (llvm::isa<llvm::CallInst>(retV)) {
+								llvm::CallInst * ref = llvm::dyn_cast<llvm::CallInst>(retV);
+								llvm::Value * operand = ref->getOperand(argNo);
+								value(operand);
+							}
+						}
+					}
+				}
 			} else if (llvm::isa<llvm::PHINode>(user)) {
 			#ifdef _DEBUG
-				llvm::errs() << "	PHINodeUser" << "\n";
+				llvm::errs() << "		PHINodeUser" << "\n";
 			#endif
 				for (llvm::Value::user_iterator ui = user->user_begin(), ue = user->user_end(); ui != ue; ++ui) {
 					llvm::User * phiuser = *ui;
 					if (llvm::isa<llvm::CallInst>(phiuser)) {
 						llvm::CallInst * callinst = llvm::dyn_cast<llvm::CallInst>(phiuser);
-						llvm::Value * operand = callinst->getOperand(argNo);
-						value(operand);
+						llvm::Value * called = callinst->getCalledOperand();
+						if (called == user) {
+							llvm::Value * operand = callinst->getOperand(argNo);
+							value(operand);
+						} else {	//此时user调用的并不是我们查找的函数，真正的函数调用发生在该函数内部
+							llvm::Function * calledf = callinst->getCalledFunction();
+							for (llvm::inst_iterator I = llvm::inst_begin(calledf), E = llvm::inst_end(calledf); I != E; ++I) {
+								if (llvm::isa<llvm::ReturnInst>(*I)) {
+									llvm::ReturnInst * ret =  llvm::dyn_cast<llvm::ReturnInst>(&*I);
+									llvm::Value * retV = ret->getReturnValue();
+									if (llvm::isa<llvm::CallInst>(retV)) {
+										llvm::CallInst * ref = llvm::dyn_cast<llvm::CallInst>(retV);
+										llvm::Value * operand = ref->getOperand(argNo);
+										value(operand);
+									}
+								}
+							}
+						}
 					}
 				}
 			}
 		}
 	}
-
-	void functionReturn(llvm::Function * F) {
-	#ifdef _DEBUG
-		llvm::errs() << "	FunctionReturn" << "\n";
-	#endif
-		for (llvm::inst_iterator I = llvm::inst_begin(F), E = llvm::inst_end(F); I != E; ++I) {
-			if (llvm::isa<llvm::ReturnInst>(*I)) {
-				llvm::ReturnInst * ret =  llvm::dyn_cast<llvm::ReturnInst>(&*I);
-				llvm::Value * retV = ret->getReturnValue();
-				value(retV);
+	
+	//访问函数时，需根据是否为嵌套调用，确定执行操作
+	void function(llvm::Function * func) {
+		if (callNest == 0) {
+		#ifdef _DEBUG
+			llvm::errs() << "	Function "<< func->getName().str() << "\n";
+		#endif
+			funcNames.insert(func->getName().str());
+		} else if (callNest > 0) {
+		#ifdef _DEBUG
+			llvm::errs() << "	FunctionReturn" << "\n";
+		#endif
+			for (llvm::inst_iterator I = llvm::inst_begin(func), E = llvm::inst_end(func); I != E; ++I) {
+				if (llvm::isa<llvm::ReturnInst>(*I)) {
+					llvm::ReturnInst * ret =  llvm::dyn_cast<llvm::ReturnInst>(&*I);
+					llvm::Value * retV = ret->getReturnValue();
+					callNest--;
+					value(retV);
+				}
 			}
 		}
 	}
-	
-	void function(llvm::Function * func) {
-	#ifdef _DEBUG
-		llvm::errs() << "	Function" << "\n";
-	#endif
-		funcNames.insert(func->getName().str());
-	}
 
+	//PHI结点的所有可能值均应考虑
 	void phiNode(llvm::PHINode * phinode) {
 	#ifdef _DEBUG
 		llvm::errs() << "	PHINode" << "\n";
 	#endif
+		bool nestFlag = false;
+		if (callNest > 0) {
+			callNest--;
+			nestFlag = true;
+		}
 		int numPhi = phinode->getNumIncomingValues();
 		for (int i = 0; i < numPhi; i++) {
 			llvm::Value * incomeV = phinode->getIncomingValue(i);
+			if (nestFlag) callNest++;
 			value(incomeV);
 		}
 	}
 
+	//首次访问CallInst，负责最终输出
 	void callInst(llvm::CallInst * callinst) {
 		int lineno = callinst->getDebugLoc().getLine();
 		llvm::Function * func = callinst->getCalledFunction();
@@ -167,8 +222,12 @@ struct FuncPtrPass : public llvm::ModulePass {
 			llvm::errs() << lineno << " : " << func->getName().str() << "\n";
 		} else {
 			funcNames.clear();
+			callNest = 0;
+			iter = 0;
 			llvm::Value * operand = callinst->getCalledOperand();
-			value(operand);
+			try {
+				value(operand);
+			} catch (const std::exception & e) {}
 			llvm::errs() << lineno << " : ";
 			int index = 0;
 			for (std::string s: funcNames) {
