@@ -6,11 +6,12 @@ answer=("10 : plus" "22 : plus" "24 : plus, minus" "27 : plus, minus" "10 : plus
             "33 : plus, minus" "10 : plus, minus\n26 : clever" "10 : plus, minus\n28 : clever\n30 : clever" "10 : plus, minus\n26: clever" \
             "10 : plus, minus\n14 : foo \n30 : clever" "15 : plus, minus\n19 : foo\n35 : clever" "15 : foo\n16 : plus\n32 : clever" \
             "15 : foo\n16 : plus, minus\n32 : clever" "30 : foo, clever\n31 : plus, minus" "24 : foo\n31 : clever,foo\n32 : plus, minus" \
-            "14 : plus, minus\n24 : foo\n27 : foo" )
+            "14 : plus, minus\n24 : foo\n27 : foo" "14 : foo\n17 : clever\n24 : clever1\n25 : plus" "14 : foo\n17 : clever\n24 : clever1\n25 : plus" \
+            )
 i=0
 #测试开始和结束的test编号
 start=0
-end=15
+end=17
 
 for file in `ls ./test`
 do

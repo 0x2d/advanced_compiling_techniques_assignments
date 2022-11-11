@@ -77,7 +77,7 @@ struct FuncPtrPass : public llvm::ModulePass {
 
 	void callInstAgain(llvm::CallInst * callinst) {
 	#ifdef _DEBUG
-		llvm::errs() << "	CallInst" << "\n";
+		llvm::errs() << "	CallInstAgain" << "\n";
 	#endif
 		llvm::Function * func = callinst->getCalledFunction();
 		if (func) {
@@ -91,6 +91,8 @@ struct FuncPtrPass : public llvm::ModulePass {
 					llvm::Value * incomeV = phinode->getIncomingValue(i);
 					functionReturn(llvm::dyn_cast<llvm::Function>(incomeV));
 				}
+			} else if (llvm::isa<llvm::Argument>(operand)) {
+				//
 			}
 		}
 	}
@@ -105,10 +107,16 @@ struct FuncPtrPass : public llvm::ModulePass {
 			llvm::User * user = *ui;
 			
 			if (llvm::isa<llvm::CallInst>(user)) {
+			#ifdef _DEBUG
+				llvm::errs() << "	CallInstUser" << "\n";
+			#endif
 				llvm::CallInst * callinst = llvm::dyn_cast<llvm::CallInst>(user);
 				llvm::Value * operand = callinst->getOperand(argNo);
 				value(operand);
 			} else if (llvm::isa<llvm::PHINode>(user)) {
+			#ifdef _DEBUG
+				llvm::errs() << "	PHINodeUser" << "\n";
+			#endif
 				for (llvm::Value::user_iterator ui = user->user_begin(), ue = user->user_end(); ui != ue; ++ui) {
 					llvm::User * phiuser = *ui;
 					if (llvm::isa<llvm::CallInst>(phiuser)) {
