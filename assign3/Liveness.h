@@ -17,6 +17,8 @@
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/IR/IntrinsicInst.h>
 
+#include <set>
+
 #include "Dataflow.h"
 using namespace llvm;
 

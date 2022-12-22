@@ -83,7 +83,39 @@ void compForwardDataflow(Function *fn,
     DataflowVisitor<T> *visitor,
     typename DataflowResult<T>::Type *result,
     const T & initval) {
-    return;
+
+    std::set<BasicBlock *> worklist;
+
+    for (Function::iterator bi = fn->begin(); bi != fn->end(); ++bi) {
+        BasicBlock *bb = &*bi;
+
+        if (result->find(bb) != result->end()) {
+            result->insert(std::make_pair(bb, std::make_pair(initval, initval)));
+        }
+        worklist.insert(bb);
+    }
+
+    while (!worklist.empty()) {
+        BasicBlock *bb = *worklist.begin();
+        worklist.erase(worklist.begin());
+
+        T bbenterval = (*result)[bb].first;
+        for (pred_iterator pi = pred_begin(bb), pe = pred_end(bb); pi != pe; pi++) {
+            BasicBlock *pred = *pi;
+            visitor->merge(&bbenterval, (*result)[pred].second);
+        }
+
+        (*result)[bb].first = bbenterval;
+        visitor->compDFVal(bb, &bbenterval, true);
+        
+        if (bbenterval == (*result)[bb].first) continue;
+        (*result)[bb].second = bbenterval;        
+        
+        
+        for (succ_iterator si = succ_begin(bb), se = succ_end(bb); si != se; si++) {
+            worklist.insert(*si);
+        }
+  }
 }
 /// 
 /// Compute a backward iterated fixedpoint dataflow function, using a user-supplied

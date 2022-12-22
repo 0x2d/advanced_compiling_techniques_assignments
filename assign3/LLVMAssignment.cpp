@@ -31,6 +31,8 @@
 #include <llvm/Support/raw_ostream.h>
 
 #include "Liveness.h"
+#include "PointsTo.h"
+
 using namespace llvm;
 static ManagedStatic<LLVMContext> GlobalContext;
 static LLVMContext &getGlobalContext() { return *GlobalContext; }
@@ -51,19 +53,19 @@ char EnableFunctionOptPass::ID = 0;
 
 ///!TODO TO BE COMPLETED BY YOU FOR ASSIGNMENT 3
 struct FuncPtrPass : public ModulePass {
-    static char ID; // Pass identification, replacement for typeid
-    FuncPtrPass() : ModulePass(ID) {}
+   static char ID; // Pass identification, replacement for typeid
+   FuncPtrPass() : ModulePass(ID) {}
 
 
-    bool runOnModule(Module &M) override {
-        errs() << "Hello: ";
-        errs().write_escaped(M.getName()) << '\n';
-        M.print(llvm::errs(), nullptr);
+   bool runOnModule(Module &M) override {
+		llvm::errs() << "Hello: ";
+		llvm::errs().write_escaped(M.getName()) << '\n';
+		M.print(llvm::errs(), nullptr);
 		// 该函数在release版的LLVM中没有开启，使用以上函数代替
 		// M.dump();
-        errs() << "------------------------------\n";
-        return false;
-    }
+		llvm::errs()<<"------------------------------\n";
+		return false;
+	}
 };
 
 
@@ -72,6 +74,9 @@ static RegisterPass<FuncPtrPass> X("funcptrpass", "Print function call instructi
 
 char Liveness::ID = 0;
 static RegisterPass<Liveness> Y("liveness", "Liveness Dataflow Analysis");
+
+char PointsTo::ID = 0;
+static RegisterPass<PointsTo> Z("pointsto", "Points-to Dataflow Analysis");
 
 static cl::opt<std::string>
 InputFilename(cl::Positional,
@@ -102,11 +107,7 @@ int main(int argc, char **argv) {
    Passes.add(llvm::createPromoteMemoryToRegisterPass());
 
    /// Your pass to print Function and Call Instructions
-   Passes.add(new Liveness());
+   Passes.add(new PointsTo());
    //Passes.add(new FuncPtrPass());
    Passes.run(*M.get());
-#ifndef NDEBUG
-   system("pause");
-#endif
 }
-
