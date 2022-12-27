@@ -108,9 +108,9 @@ void compForwardDataflow(Function *fn,
         (*result)[bb].first = bbenterval;
         visitor->compDFVal(bb, &bbenterval, true);
         
-        if (bbenterval == (*result)[bb].first) continue;
+        //这两句还是得调换一下位置，backward写错了，不然当第一次遇到不改变结果的基本块时，会把输入清空
         (*result)[bb].second = bbenterval;        
-        
+        if (bbenterval == (*result)[bb].first) continue;
         
         for (succ_iterator si = succ_begin(bb), se = succ_end(bb); si != se; si++) {
             worklist.insert(*si);

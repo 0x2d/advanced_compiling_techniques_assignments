@@ -9,11 +9,11 @@
 #include "Dataflow.h"
 using namespace llvm;
 
-// #define _DEGUB
+// #define _DEBUG
 
 struct PointsToInfo {
     std::map<Value *, std::set<Value *>> pointsToSets;
-    std::map<Value *, std::set<Value *>> aliases;
+    std::map<Value *, Value *> aliases;
 
     bool operator== (const PointsToInfo &info) const {
         return pointsToSets == info.pointsToSets && aliases == info.aliases;
@@ -45,12 +45,10 @@ inline raw_ostream &operator<< (raw_ostream &out, const PointsToInfo &info) {
         } else {
             out << "Temp : ";
         }
-        for (auto p: pts.second) {
-            if (p->hasName()) {
-                out << p->getName() << ", ";
-            } else {
-                out << "temp, ";
-            }
+        if (pts.second->hasName()) {
+            out << pts.second->getName();
+        } else {
+            out << "temp";
         }
         out << "\n";
     }
@@ -88,11 +86,18 @@ public:
                 return;
             }
 
+            //令pointer，要么指向value，要么与value指向相同。如果pointer是某个指针的别名，则同时修改这两个指针的指向集
             if (dfval->pointsToSets.find(value) == dfval->pointsToSets.end()) {
                 std::set<Value *> values = {value};
                 dfval->pointsToSets[pointer] = values;
+                if (dfval->aliases.find(pointer) != dfval->aliases.end()) {
+                    dfval->pointsToSets[dfval->aliases[pointer]] = values;
+                }
             } else {
                 dfval->pointsToSets[pointer] = dfval->pointsToSets[value];
+                if (dfval->aliases.find(pointer) != dfval->aliases.end()) {
+                    dfval->pointsToSets[dfval->aliases[pointer]] = dfval->pointsToSets[value];
+                }
             }
         } else if (isa<LoadInst>(inst)) {
             LoadInst * loadinst = dyn_cast<LoadInst>(inst);
@@ -103,8 +108,11 @@ public:
                 return;
             }
 
+            //令result的指向集与pointer相同
             std::set<Value *> pts = dfval->pointsToSets[pointer];
             dfval->pointsToSets[result] = pts;
+        } else if (isa<MemSetInst>(inst)) {
+            return;
         } else if (isa<CallInst>(inst)) {
             CallInst * callinst = dyn_cast<CallInst>(inst);
             Value * called = callinst->getCalledOperand();
@@ -179,12 +187,18 @@ public:
             } else {
                 dfval->pointsToSets[f] = {value};
             }
-        } else if (isa<MemSetInst>(inst)) {
-            return;
         } else if (isa<MemCpyInst>(inst)) {
             ;
         } else if (isa<GetElementPtrInst>(inst)) {
-            ;
+            GetElementPtrInst * getelementptrinst = dyn_cast<GetElementPtrInst>(inst);
+            Value * pointer = getelementptrinst->getPointerOperand();
+            Value * result = getelementptrinst;
+
+            //将result设为pointer的别名，同时同步这两个指针的指向集
+            dfval->aliases[result] = pointer;
+            if (dfval->pointsToSets.find(pointer) != dfval->pointsToSets.end()) {
+                dfval->pointsToSets[result] = dfval->pointsToSets[pointer];
+            }
         }
     }
 
@@ -219,9 +233,12 @@ public:
         DataflowResult<PointsToInfo>::Type result;
         PointsToInfo initval;
 
-        Function &F = *(M.rbegin());
+        auto F = M.rbegin();
+        while (F->isIntrinsic()) {
+            F++;
+        }
 
-        compForwardDataflow(&F, &visitor, &result, initval);
+        compForwardDataflow(&*F, &visitor, &result, initval);
     #ifdef _DEBUG
         printDataflowResult<PointsToInfo>(errs(), result);
     #endif
