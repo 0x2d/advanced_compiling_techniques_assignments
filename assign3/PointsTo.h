@@ -129,9 +129,17 @@ public:
                     alias.insert(temp);
                 }
             }
-            for (auto p: alias) {
-                dfval->pointsToSets[p] = values;
+            //当有多个别名时，不能替换，而是应该合并
+            if (alias.size() == 1) {
+                for (auto p: alias) {
+                    dfval->pointsToSets[p] = values;
+                }
+            } else {
+                for (auto p: alias) {
+                    dfval->pointsToSets[p].insert(values.begin(), values.end());
+                }
             }
+            
         } else if (isa<LoadInst>(inst)) {
             LoadInst * loadinst = dyn_cast<LoadInst>(inst);
             Value * pointer = loadinst->getPointerOperand();
