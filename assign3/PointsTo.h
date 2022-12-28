@@ -5,6 +5,7 @@
 
 #include <set>
 #include <map>
+#include <queue>
 
 #include "Dataflow.h"
 using namespace llvm;
@@ -13,7 +14,7 @@ using namespace llvm;
 
 struct PointsToInfo {
     std::map<Value *, std::set<Value *>> pointsToSets;
-    std::map<Value *, Value *> aliases;
+    std::map<Value *, std::set<Value *>> aliases;
 
     bool operator== (const PointsToInfo &info) const {
         return pointsToSets == info.pointsToSets && aliases == info.aliases;
@@ -26,13 +27,18 @@ inline raw_ostream &operator<< (raw_ostream &out, const PointsToInfo &info) {
         if (pts.first->hasName()) {
             out << pts.first->getName() << " : ";
         } else {
-            out << "Temp : ";
+            pts.first->print(out);
+            out << " : ";
         }
         for (auto p: pts.second) {
+            if (p == NULL) {
+                continue;
+            }
             if (p->hasName()) {
                 out << p->getName() << ", ";
             } else {
-                out << "temp, ";
+                p->print(out);
+                out << ", ";
             }
         }
         out << "\n";
@@ -43,12 +49,19 @@ inline raw_ostream &operator<< (raw_ostream &out, const PointsToInfo &info) {
         if (pts.first->hasName()) {
             out << pts.first->getName() << " : ";
         } else {
-            out << "Temp : ";
+            pts.first->print(out);
+            out << " : ";
         }
-        if (pts.second->hasName()) {
-            out << pts.second->getName();
-        } else {
-            out << "temp";
+        for (auto p: pts.second) {
+            if (p == NULL) {
+                continue;
+            }
+            if (p->hasName()) {
+                out << p->getName() << ", ";
+            } else {
+                p->print(out);
+                out << ", ";
+            }
         }
         out << "\n";
     }
@@ -70,6 +83,15 @@ public:
                 tempfind->second.insert(pts.second.begin(), pts.second.end());
             }
         }
+
+        for (auto &pts: src.aliases) {
+            auto tempfind = dest->aliases.find(pts.first);
+            if (tempfind == dest->aliases.end()) {
+                dest->aliases.insert(pts);
+            } else {
+                tempfind->second.insert(pts.second.begin(), pts.second.end());
+            }
+        }
     }
 
     void compDFVal(Instruction *inst, PointsToInfo * dfval) override {
@@ -86,18 +108,29 @@ public:
                 return;
             }
 
-            //令pointer，要么指向value，要么与value指向相同。如果pointer是某个指针的别名，则同时修改这两个指针的指向集
-            if (dfval->pointsToSets.find(value) == dfval->pointsToSets.end()) {
-                std::set<Value *> values = {value};
-                dfval->pointsToSets[pointer] = values;
-                if (dfval->aliases.find(pointer) != dfval->aliases.end()) {
-                    dfval->pointsToSets[dfval->aliases[pointer]] = values;
-                }
+            //令pointer，要么指向value，要么指向value的别名；如果pointer是某个指针的别名，则递归地找到pointer的核心的别名，替换其指向集为values
+            std::set<Value *> values = {};
+            if (dfval->aliases.find(value) != dfval->aliases.end()) {
+                values.insert(dfval->aliases[value].begin(), dfval->aliases[value].end());
             } else {
-                dfval->pointsToSets[pointer] = dfval->pointsToSets[value];
-                if (dfval->aliases.find(pointer) != dfval->aliases.end()) {
-                    dfval->pointsToSets[dfval->aliases[pointer]] = dfval->pointsToSets[value];
+                values.insert(value);
+            }
+            std::queue<Value *> worklist;
+            worklist.push(pointer);
+            std::set<Value *> alias = {};
+            while (worklist.size() > 0) {
+                Value * temp = worklist.front();
+                worklist.pop();
+                if (dfval->aliases.find(temp) != dfval->aliases.end()) {
+                    for (auto ap: dfval->aliases[temp]) {
+                        worklist.push(ap);
+                    }
+                } else {
+                    alias.insert(temp);
                 }
+            }
+            for (auto p: alias) {
+                dfval->pointsToSets[p] = values;
             }
         } else if (isa<LoadInst>(inst)) {
             LoadInst * loadinst = dyn_cast<LoadInst>(inst);
@@ -108,11 +141,24 @@ public:
                 return;
             }
 
-            //令result的指向集与pointer相同
+            //令result的指向集与pointer的指向集的指向集相同，同时设result为pointer指向集的别名
             std::set<Value *> pts = dfval->pointsToSets[pointer];
-            dfval->pointsToSets[result] = pts;
+            dfval->pointsToSets[result] = {};
+            dfval->aliases[result] = pts;
+            for (auto ap: pts) {
+                dfval->pointsToSets[result].insert(dfval->pointsToSets[ap].begin(), dfval->pointsToSets[ap].end());
+            }
+            if (dfval->pointsToSets[result].size() == 0) {
+                dfval->pointsToSets.erase(result);
+            }
         } else if (isa<MemSetInst>(inst)) {
             return;
+        } else if (isa<MemCpyInst>(inst)) {
+            MemCpyInst * memcpyinst = dyn_cast<MemCpyInst>(inst);
+            Value *source = memcpyinst->getSource();
+            Value *dest = memcpyinst->getDest();
+
+            dfval->pointsToSets[dest] = dfval->pointsToSets[source];
         } else if (isa<CallInst>(inst)) {
             CallInst * callinst = dyn_cast<CallInst>(inst);
             Value * called = callinst->getCalledOperand();
@@ -122,20 +168,24 @@ public:
                 funcNames.insert("malloc");
                 return;
             }
-
+            
             std::set<Function *> functions;
             if (isa<Function>(called)) {
                 functions.insert(dyn_cast<Function>(called));
             } else {
-                auto alias = dfval->pointsToSets[called];
+                auto alias = dfval->aliases[called];
                 for (auto f : alias) {
                     functions.insert(dyn_cast<Function>(f));
                 }
             }
-
+            
             for (auto f : functions) {
+                if (f == NULL) {
+                    continue;
+                }
+                // errs() << *dfval << "\n";
                 funcNames.insert(f->getName());
-                PointsToInfo calleeInfo;
+                PointsToInfo calleeInfo = *dfval;
                 std::map<Value *, Value *> args;
                 for (unsigned i = 0; i < callinst->getNumArgOperands(); i++) {
                     Value * callerArg = callinst->getArgOperand(i);
@@ -144,6 +194,9 @@ public:
                         args[callerArg] = calleeArg;
                         if (dfval->pointsToSets.find(callerArg) != dfval->pointsToSets.end()) {
                             calleeInfo.pointsToSets[calleeArg] = dfval->pointsToSets[callerArg];
+                        }
+                        if (dfval->aliases.find(callerArg) != dfval->aliases.end()) {
+                            calleeInfo.aliases[calleeArg] = dfval->aliases[callerArg];
                         }
                     }
                 }
@@ -157,14 +210,28 @@ public:
                 DataflowResult<PointsToInfo>::Type result;
                 result[targetEntry].first = calleeInfo;
                 compForwardDataflow(f, &visitor, &result, initval);
-
+            #ifdef _DEBUG
+                // printDataflowResult<PointsToInfo>(errs(), result);
+            #endif
                 PointsToInfo calleeResult = result[targetExit].second;
+                merge(dfval, calleeResult);
                 for (auto p: args) {
                     if (calleeResult.pointsToSets.find(p.second) != calleeResult.pointsToSets.end()) {
+                        /*
                         if (dfval->pointsToSets.find(p.first) != dfval->pointsToSets.end()) {
                             dfval->pointsToSets[p.first].insert(calleeResult.pointsToSets[p.second].begin(), calleeResult.pointsToSets[p.second].end());
                         } else {
                             dfval->pointsToSets[p.first] = calleeResult.pointsToSets[p.second];
+                        }
+                        */
+                       //函数的指针参数的指向集不能合并，需要替换
+                        dfval->pointsToSets[p.first] = calleeResult.pointsToSets[p.second];
+                    }
+                    if (calleeResult.aliases.find(p.second) != calleeResult.aliases.end()) {
+                        if (dfval->aliases.find(p.first) != dfval->aliases.end()) {
+                            dfval->aliases[p.first].insert(calleeResult.aliases[p.second].begin(), calleeResult.aliases[p.second].end());
+                        } else {
+                            dfval->aliases[p.first] = calleeResult.aliases[p.second];
                         }
                     }
                 }
@@ -182,20 +249,19 @@ public:
             ReturnInst * returninst = dyn_cast<ReturnInst>(inst);
             Value * value = returninst->getReturnValue();
             Value * f = returninst->getFunction();
-            if (dfval->pointsToSets.find(f) != dfval->pointsToSets.end()) {
-                dfval->pointsToSets[f].insert(value);
+            //返回值应设置别名而非指向集
+            if (dfval->aliases.find(value) != dfval->aliases.end()) {
+                dfval->aliases[f] = dfval->aliases[value];
             } else {
-                dfval->pointsToSets[f] = {value};
+                dfval->aliases[f] = {value};
             }
-        } else if (isa<MemCpyInst>(inst)) {
-            ;
         } else if (isa<GetElementPtrInst>(inst)) {
             GetElementPtrInst * getelementptrinst = dyn_cast<GetElementPtrInst>(inst);
             Value * pointer = getelementptrinst->getPointerOperand();
             Value * result = getelementptrinst;
 
             //将result设为pointer的别名，同时同步这两个指针的指向集
-            dfval->aliases[result] = pointer;
+            dfval->aliases[result] = {pointer};
             if (dfval->pointsToSets.find(pointer) != dfval->pointsToSets.end()) {
                 dfval->pointsToSets[result] = dfval->pointsToSets[pointer];
             }
@@ -234,10 +300,12 @@ public:
         PointsToInfo initval;
 
         auto F = M.rbegin();
-        while (F->isIntrinsic()) {
+        while (F->isIntrinsic() || F->getName() == "malloc") {
             F++;
         }
-
+    #ifdef _DEBUG
+        llvm::errs() << "Analyse function : " << F->getName() << "\n";
+    #endif
         compForwardDataflow(&*F, &visitor, &result, initval);
     #ifdef _DEBUG
         printDataflowResult<PointsToInfo>(errs(), result);
