@@ -25,7 +25,7 @@ inline raw_ostream &operator<< (raw_ostream &out, const PointsToInfo &info) {
     out << "\nPoints-to Sets: \n";
     for (auto pts: info.pointsToSets) {
         if (pts.first->hasName()) {
-            out << pts.first->getName() << " : ";
+            out << "  " << pts.first->getName() << " : ";
         } else {
             pts.first->print(out);
             out << " : ";
@@ -47,7 +47,7 @@ inline raw_ostream &operator<< (raw_ostream &out, const PointsToInfo &info) {
     out << "\nAliases: \n";
     for (auto pts: info.aliases) {
         if (pts.first->hasName()) {
-            out << pts.first->getName() << " : ";
+            out << "  " << pts.first->getName() << " : ";
         } else {
             pts.first->print(out);
             out << " : ";
@@ -104,7 +104,7 @@ public:
             Value * value = storeinst->getValueOperand();
             Value * pointer = storeinst->getPointerOperand();
 
-            if (isa<ConstantData>(value)) {
+            if (isa<ConstantData>(value) || !pointer->getType()->getContainedType(0)->isPointerTy()) {
                 return;
             }
 
@@ -151,29 +151,29 @@ public:
 
             //令result的指向集与pointer的指向集的指向集相同，同时设result为pointer指向集的别名
             std::set<Value *> pts = dfval->pointsToSets[pointer];
-            dfval->pointsToSets[result] = {};
             dfval->aliases[result] = pts;
             for (auto ap: pts) {
-                dfval->pointsToSets[result].insert(dfval->pointsToSets[ap].begin(), dfval->pointsToSets[ap].end());
+                if (dfval->pointsToSets.find(ap) != dfval->pointsToSets.end()) {
+                    dfval->pointsToSets[result].insert(dfval->pointsToSets[ap].begin(), dfval->pointsToSets[ap].end());
+                }
             }
-            if (dfval->pointsToSets[result].size() == 0) {
-                dfval->pointsToSets.erase(result);
-            }
+
         } else if (isa<MemSetInst>(inst)) {
             return;
+
         } else if (isa<MemCpyInst>(inst)) {
             MemCpyInst * memcpyinst = dyn_cast<MemCpyInst>(inst);
             Value *source = memcpyinst->getSource();
             Value *dest = memcpyinst->getDest();
-
             dfval->pointsToSets[dest] = dfval->pointsToSets[source];
+
         } else if (isa<CallInst>(inst)) {
             CallInst * callinst = dyn_cast<CallInst>(inst);
             Value * called = callinst->getCalledOperand();
             unsigned lineno = callinst->getDebugLoc().getLine();
-            auto & funcNames = results[lineno];
+
             if (isa<Function>(called) && called->getName() == "malloc") {
-                funcNames.insert("malloc");
+                results[lineno].insert("malloc");
                 return;
             }
             
@@ -188,13 +188,10 @@ public:
             }
             
             for (auto f : functions) {
-                if (f == NULL) {
-                    continue;
-                }
-                // errs() << *dfval << "\n";
-                funcNames.insert(f->getName());
-                PointsToInfo calleeInfo = *dfval;
-                std::map<Value *, Value *> args;
+                results[lineno].insert(f->getName());
+                PointsToInfo calleeInfo = *dfval;               
+                std::map<Value *, Value *> args;    //实参和形参的对应关系
+                
                 for (unsigned i = 0; i < callinst->getNumArgOperands(); i++) {
                     Value * callerArg = callinst->getArgOperand(i);
                     if (callerArg->getType()->isPointerTy()) {
@@ -211,6 +208,7 @@ public:
                 if (f->getReturnType()->isPointerTy()) {
                     args[callinst] = f;
                 }
+
                 PointsToInfo initval;
                 PointsToVisitor visitor;
                 BasicBlock *targetEntry = &(f->getEntryBlock());
@@ -219,21 +217,23 @@ public:
                 result[targetEntry].first = calleeInfo;
                 compForwardDataflow(f, &visitor, &result, initval);
             #ifdef _DEBUG
+                // errs() << "before call " << f->getName() << *dfval << "\n";
                 // printDataflowResult<PointsToInfo>(errs(), result);
             #endif
                 PointsToInfo calleeResult = result[targetExit].second;
-                merge(dfval, calleeResult);
+                
+                //合并调用指向集与被调用指向集，在函数中被修改过的指向集，以被调用指向集为准，替换原指向集
+                for (auto pts: calleeResult.pointsToSets) {
+                    if (dfval->pointsToSets.find(pts.first) == dfval->pointsToSets.end()) {
+                        dfval->pointsToSets.insert(pts);
+                    } else {
+                        dfval->pointsToSets[pts.first] = pts.second;
+                    }
+                }
+                //合并实参与形参的指向集和别名
                 for (auto p: args) {
                     if (calleeResult.pointsToSets.find(p.second) != calleeResult.pointsToSets.end()) {
-                        /*
-                        if (dfval->pointsToSets.find(p.first) != dfval->pointsToSets.end()) {
-                            dfval->pointsToSets[p.first].insert(calleeResult.pointsToSets[p.second].begin(), calleeResult.pointsToSets[p.second].end());
-                        } else {
-                            dfval->pointsToSets[p.first] = calleeResult.pointsToSets[p.second];
-                        }
-                        */
-                       //函数的指针参数的指向集不能合并，需要替换
-                        dfval->pointsToSets[p.first] = calleeResult.pointsToSets[p.second];
+                        dfval->pointsToSets[p.first] = calleeResult.pointsToSets[p.second]; //函数参数的指向集不能合并，需要替换
                     }
                     if (calleeResult.aliases.find(p.second) != calleeResult.aliases.end()) {
                         if (dfval->aliases.find(p.first) != dfval->aliases.end()) {
@@ -243,7 +243,10 @@ public:
                         }
                     }
                 }
-
+            #ifdef _DEBUG
+                // errs() << "after call " << f->getName() << *dfval << "\n";
+            #endif
+                //合并调用结果
                 for (auto line: visitor.results) {
                     if (results.find(line.first) == results.end()) {
                         results[line.first] = line.second;
@@ -256,13 +259,17 @@ public:
         } else if (isa<ReturnInst>(inst)) {
             ReturnInst * returninst = dyn_cast<ReturnInst>(inst);
             Value * value = returninst->getReturnValue();
-            Value * f = returninst->getFunction();
+            Function * f = returninst->getFunction();
+            if (!f->getReturnType()->isPointerTy()) {
+                    return;
+            }
             //返回值应设置别名而非指向集
             if (dfval->aliases.find(value) != dfval->aliases.end()) {
                 dfval->aliases[f] = dfval->aliases[value];
             } else {
                 dfval->aliases[f] = {value};
             }
+
         } else if (isa<GetElementPtrInst>(inst)) {
             GetElementPtrInst * getelementptrinst = dyn_cast<GetElementPtrInst>(inst);
             Value * pointer = getelementptrinst->getPointerOperand();

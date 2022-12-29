@@ -33,7 +33,7 @@ do
         #输出结果和正确答案
         echo -e "\033[32m-----$file-----\033[0m"
         ./build/assignment3 ./bitcode/`basename $file .c`.bc
-        echo -e ">>> \e[1;33m answer \e[0m"
+        echo -e "\e[1;33m >>> answer \e[0m"
         echo -e ${answer[i]}
     fi
     let i++
